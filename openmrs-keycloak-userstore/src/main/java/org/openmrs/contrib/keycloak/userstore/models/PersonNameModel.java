@@ -9,35 +9,34 @@
  */
 package org.openmrs.contrib.keycloak.userstore.models;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.ManyToOne;
-import javax.persistence.Table;
-
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
 import lombok.Data;
 
 @Entity
 @Table(name = "person_name")
 @Data
 public class PersonNameModel {
-	
+
 	@Id
 	@Column(name = "person_name_id")
 	private Integer personNameId;
-	
+
 	@ManyToOne(optional = false)
 	@JoinColumn(name = "person_id", nullable = false)
 	private PersonModel person;
-	
+
 	@Column(name = "given_name")
 	private String givenName;
-	
+
 	@Column(name = "middle_name")
 	private String middleName;
-	
+
 	@Column(name = "family_name")
 	private String familyName;
-	
+
 }

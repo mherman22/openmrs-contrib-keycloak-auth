@@ -9,29 +9,28 @@
  */
 package org.openmrs.contrib.keycloak.userstore.models;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.OneToOne;
-import javax.persistence.Table;
-
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
 import lombok.Data;
 
 @Entity
 @Table(name = "users")
 @Data
 public class OpenmrsUserModel {
-	
+
 	@Id
 	@Column(name = "user_id")
 	private Integer userId;
-	
+
 	@OneToOne
 	@JoinColumn(name = "person_id")
 	private PersonModel person;
-	
+
 	private String username;
-	
+
 	private String email;
 }

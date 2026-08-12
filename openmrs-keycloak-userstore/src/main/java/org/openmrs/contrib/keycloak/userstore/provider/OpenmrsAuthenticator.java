@@ -9,17 +9,13 @@
  */
 package org.openmrs.contrib.keycloak.userstore.provider;
 
-import javax.persistence.PersistenceException;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import com.google.common.collect.ImmutableMap;
+import jakarta.persistence.PersistenceException;
 import lombok.AccessLevel;
 import lombok.Setter;
 import org.keycloak.component.ComponentModel;
@@ -42,11 +38,11 @@ import org.slf4j.LoggerFactory;
 
 @Setter(AccessLevel.PACKAGE)
 public class OpenmrsAuthenticator implements CredentialInputValidator, UserLookupProvider, UserStorageProvider, UserQueryProvider {
-	
+
 	protected static final MessageDigest MESSAGE_DIGEST;
-	
+
 	private static final Logger log = LoggerFactory.getLogger(OpenmrsAuthenticator.class);
-	
+
 	static {
 		try {
 			MESSAGE_DIGEST = MessageDigest.getInstance("SHA-512");
@@ -55,51 +51,51 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			throw new IllegalStateException(e);
 		}
 	}
-	
+
 	protected KeycloakSession session;
-	
+
 	protected ComponentModel model;
-	
+
 	protected UserDao userDao;
-	
+
 	public OpenmrsAuthenticator(KeycloakSession session, ComponentModel model, UserDao userDao) {
 		this.session = session;
 		this.model = model;
 		this.userDao = userDao;
 	}
-	
+
 	@Override
-	public UserModel getUserById(String id, RealmModel realmModel) {
+	public UserModel getUserById(RealmModel realmModel, String id) {
 		return new UserAdapter(session, realmModel, model,
 		        userDao.getOpenmrsUserByUserId(Integer.parseInt(StorageId.externalId(id))));
 	}
-	
+
 	@Override
-	public UserModel getUserByUsername(String username, RealmModel realmModel) {
+	public UserModel getUserByUsername(RealmModel realmModel, String username) {
 		return new UserAdapter(session, realmModel, model, userDao.getOpenmrsUserByUsername(username));
 	}
-	
+
 	@Override
-	public UserModel getUserByEmail(String email, RealmModel realmModel) {
+	public UserModel getUserByEmail(RealmModel realmModel, String email) {
 		return new UserAdapter(session, realmModel, model, userDao.getOpenmrsUserByEmail(email));
 	}
-	
+
 	@Override
 	public boolean supportsCredentialType(String credentialType) {
 		return credentialType.equals(PasswordCredentialModel.TYPE);
 	}
-	
+
 	@Override
 	public boolean isConfiguredFor(RealmModel realmModel, UserModel userModel, String credentialType) {
 		return credentialType.equals(PasswordCredentialModel.TYPE);
 	}
-	
+
 	@Override
 	public boolean isValid(RealmModel realmModel, UserModel userModel, CredentialInput credentialInput) {
 		if (!(credentialInput instanceof UserCredentialModel) || !supportsCredentialType(credentialInput.getType())) {
 			return false;
 		}
-		
+
 		String[] passwordAndSalt;
 		try {
 			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userModel);
@@ -108,20 +104,20 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			log.error("Caught exception while fetching password and salt from database", e);
 			return false;
 		}
-		
+
 		String passwordOnRecord = passwordAndSalt[0];
 		String saltOnRecord = passwordAndSalt[1];
 		String currentPassword = credentialInput.getChallengeResponse();
-		
+
 		if (passwordOnRecord == null || saltOnRecord == null || currentPassword == null) {
 			return false;
 		}
-		
+
 		String passwordToHash = currentPassword + saltOnRecord;
 		byte[] input = passwordToHash.getBytes(StandardCharsets.UTF_8);
 		return passwordOnRecord.equals(hexString(MESSAGE_DIGEST.digest(input)));
 	}
-	
+
 	private String hexString(byte[] block) {
 		StringBuilder buf = new StringBuilder();
 		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
@@ -133,66 +129,51 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			buf.append(hexChars[high]);
 			buf.append(hexChars[low]);
 		}
-		
+
 		return buf.toString();
 	}
-	
+
 	@Override
 	public void close() {
-		
+
 	}
-	
+
 	@Override
 	public int getUsersCount(RealmModel realmModel) {
 		return userDao.getOpenmrsUserCount();
 	}
-	
+
+	/**
+	 * Keycloak 26 asks for streams rather than lists, and passes paging bounds as nullable Integers: a
+	 * null means "unbounded", which the DAO expresses as 0 and Integer.MAX_VALUE.
+	 */
 	@Override
-	public List<UserModel> getUsers(RealmModel realmModel) {
-		return getUsers(realmModel, 0, Integer.MAX_VALUE);
+	public Stream<UserModel> searchForUserStream(RealmModel realmModel, Map<String, String> params, Integer firstResult,
+	        Integer maxResults) {
+		return userDao.searchForOpenmrsUserQuery(params, firstOr(firstResult), maxOr(maxResults)).stream()
+		        .map(user -> (UserModel) new UserAdapter(session, realmModel, model, user));
 	}
-	
+
 	@Override
-	public List<UserModel> getUsers(RealmModel realmModel, int firstResult, int maxResults) {
-		return userDao.getAllOpenmrsUsers(firstResult, maxResults).stream()
-		        .map(userModel -> new UserAdapter(session, realmModel, model, userModel)).collect(Collectors.toList());
+	public Stream<UserModel> searchForUserByUserAttributeStream(RealmModel realmModel, String attribute, String value) {
+		// OpenMRS users carry no Keycloak-style attributes, so there is nothing to search. Returning
+		// empty is the honest answer; throwing would break admin console searches.
+		return Stream.empty();
 	}
-	
+
 	@Override
-	public List<UserModel> searchForUser(String s, RealmModel realmModel) {
-		return searchForUser(s, realmModel, 0, Integer.MAX_VALUE);
+	public Stream<UserModel> getGroupMembersStream(RealmModel realmModel, GroupModel groupModel, Integer firstResult,
+	        Integer maxResults) {
+		// Groups are a Keycloak concept. OpenMRS roles are not exposed as groups here, so no user is a
+		// member of any group as far as this provider is concerned.
+		return Stream.empty();
 	}
-	
-	@Override
-	public List<UserModel> searchForUser(String search, RealmModel realmModel, int firstResult, int maxResults) {
-		return searchForUser(ImmutableMap.<String, String> builder().put("username", search).put("email", search)
-		        .put("first", search).put("last", search).build(),
-		    realmModel, firstResult, maxResults);
+
+	private int firstOr(Integer firstResult) {
+		return firstResult == null || firstResult < 0 ? 0 : firstResult;
 	}
-	
-	@Override
-	public List<UserModel> searchForUser(Map<String, String> map, RealmModel realmModel) {
-		return searchForUser(map, realmModel, 0, Integer.MAX_VALUE);
-	}
-	
-	@Override
-	public List<UserModel> searchForUser(Map<String, String> map, RealmModel realmModel, int firstResult, int maxResults) {
-		return userDao.searchForOpenmrsUserQuery(map, firstResult, maxResults).stream()
-		        .map(userModel -> new UserAdapter(session, realmModel, model, userModel)).collect(Collectors.toList());
-	}
-	
-	@Override
-	public List<UserModel> getGroupMembers(RealmModel realmModel, GroupModel groupModel, int i, int i1) {
-		return Collections.emptyList();
-	}
-	
-	@Override
-	public List<UserModel> getGroupMembers(RealmModel realmModel, GroupModel groupModel) {
-		return Collections.EMPTY_LIST;
-	}
-	
-	@Override
-	public List<UserModel> searchForUserByUserAttribute(String s, String s1, RealmModel realmModel) {
-		return Collections.emptyList();
+
+	private int maxOr(Integer maxResults) {
+		return maxResults == null || maxResults < 0 ? Integer.MAX_VALUE : maxResults;
 	}
 }
