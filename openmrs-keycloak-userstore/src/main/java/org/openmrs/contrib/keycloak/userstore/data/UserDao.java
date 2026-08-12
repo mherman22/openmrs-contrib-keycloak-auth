@@ -28,25 +28,35 @@ public class UserDao {
 		this.em = em;
 	}
 
+	/**
+	 * @return the user, or null if there is no such user.
+	 *         <p>
+	 *         Null, not an exception. Keycloak's federation contract is that a lookup for a user who
+	 *         does not exist answers null; getSingleResult throws NoResultException instead, which
+	 *         Keycloak reports to the browser as "Unexpected error when handling authentication request
+	 *         to identity provider". Every mistyped username at the login form produced that page.
+	 */
 	public OpenmrsUserModel getOpenmrsUserByUsername(String username) {
 		TypedQuery<OpenmrsUserModel> query = em.createQuery("select u from OpenmrsUserModel u where u.username = :username",
 		    OpenmrsUserModel.class);
 		query.setParameter("username", username);
-		return query.getSingleResult();
+		return query.getResultStream().findFirst().orElse(null);
 	}
 
+	/** @return the user, or null if there is no such user. See {@link #getOpenmrsUserByUsername}. */
 	public OpenmrsUserModel getOpenmrsUserByUserId(Integer userId) {
 		TypedQuery<OpenmrsUserModel> query = em.createQuery("select u from OpenmrsUserModel u where u.userId = :userId",
 		    OpenmrsUserModel.class);
 		query.setParameter("userId", userId);
-		return query.getSingleResult();
+		return query.getResultStream().findFirst().orElse(null);
 	}
 
+	/** @return the user, or null if there is no such user. See {@link #getOpenmrsUserByUsername}. */
 	public OpenmrsUserModel getOpenmrsUserByEmail(String email) throws NotImplementedException {
 		TypedQuery<OpenmrsUserModel> query = em.createQuery("select u from OpenmrsUserModel u where u.email = :email",
 		    OpenmrsUserModel.class);
 		query.setParameter("email", email);
-		return query.getSingleResult();
+		return query.getResultStream().findFirst().orElse(null);
 	}
 
 	public String[] getUserPasswordAndSaltOnRecord(org.keycloak.models.UserModel userModel) {
@@ -57,7 +67,12 @@ public class UserDao {
 
 		Query query = em.createNativeQuery("select password, salt from users u where u.username = :username");
 		query.setParameter("username", userModel.getUsername());
-		return Arrays.stream((Object[]) query.getSingleResult()).map(Object::toString).toArray(String[]::new);
+
+		// Null rather than an exception, for the same reason as above: a user with no row here is a
+		// failed credential, not a server fault.
+		Object row = query.getResultStream().findFirst().orElse(null);
+
+		return row == null ? null : Arrays.stream((Object[]) row).map(Object::toString).toArray(String[]::new);
 	}
 
 	public int getOpenmrsUserCount() {

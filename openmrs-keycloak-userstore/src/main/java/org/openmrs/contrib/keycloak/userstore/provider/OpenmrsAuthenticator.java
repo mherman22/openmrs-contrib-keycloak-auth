@@ -33,6 +33,7 @@ import org.keycloak.storage.user.UserLookupProvider;
 import org.keycloak.storage.user.UserQueryProvider;
 import org.openmrs.contrib.keycloak.userstore.data.UserAdapter;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
+import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,20 +65,26 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		this.userDao = userDao;
 	}
 
+	// Keycloak's contract for all three: null when there is no such user. Wrapping the lookup
+	// unconditionally produced a UserAdapter around nothing, which fails later and further away.
+
 	@Override
 	public UserModel getUserById(RealmModel realmModel, String id) {
-		return new UserAdapter(session, realmModel, model,
-		        userDao.getOpenmrsUserByUserId(Integer.parseInt(StorageId.externalId(id))));
+		return adapt(realmModel, userDao.getOpenmrsUserByUserId(Integer.parseInt(StorageId.externalId(id))));
 	}
 
 	@Override
 	public UserModel getUserByUsername(RealmModel realmModel, String username) {
-		return new UserAdapter(session, realmModel, model, userDao.getOpenmrsUserByUsername(username));
+		return adapt(realmModel, userDao.getOpenmrsUserByUsername(username));
 	}
 
 	@Override
 	public UserModel getUserByEmail(RealmModel realmModel, String email) {
-		return new UserAdapter(session, realmModel, model, userDao.getOpenmrsUserByEmail(email));
+		return adapt(realmModel, userDao.getOpenmrsUserByEmail(email));
+	}
+
+	private UserModel adapt(RealmModel realmModel, OpenmrsUserModel user) {
+		return user == null ? null : new UserAdapter(session, realmModel, model, user);
 	}
 
 	@Override
@@ -102,6 +109,11 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		}
 		catch (PersistenceException e) {
 			log.error("Caught exception while fetching password and salt from database", e);
+			return false;
+		}
+
+		if (passwordAndSalt == null) {
+			// No credential row for this user: a failed sign-in, not a server fault.
 			return false;
 		}
 
