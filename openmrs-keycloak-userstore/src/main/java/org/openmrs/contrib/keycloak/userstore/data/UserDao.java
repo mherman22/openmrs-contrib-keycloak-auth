@@ -37,9 +37,13 @@ public class UserDao {
 	 *         to identity provider". Every mistyped username at the login form produced that page.
 	 */
 	public OpenmrsUserModel getOpenmrsUserByUsername(String username) {
-		TypedQuery<OpenmrsUserModel> query = em.createQuery("select u from OpenmrsUserModel u where u.username = :username",
+		// Username or system_id, which is what OpenMRS's own getUserByUsername matches. Matching only on
+		// username left the admin account, and any user created without one, unable to authenticate at
+		// all: those rows carry the name in system_id and NULL in username.
+		TypedQuery<OpenmrsUserModel> query = em.createQuery(
+		    "select u from OpenmrsUserModel u where u.username = :identifier or u.systemId = :identifier",
 		    OpenmrsUserModel.class);
-		query.setParameter("username", username);
+		query.setParameter("identifier", username);
 		return query.getResultStream().findFirst().orElse(null);
 	}
 
@@ -65,8 +69,10 @@ public class UserDao {
 			throw new IllegalArgumentException("Username cannot be blank");
 		}
 
-		Query query = em.createNativeQuery("select password, salt from users u where u.username = :username");
-		query.setParameter("username", userModel.getUsername());
+		// Either column, for the same reason as the lookup above.
+		Query query = em.createNativeQuery(
+		    "select password, salt from users u where u.username = :identifier or u.system_id = :identifier");
+		query.setParameter("identifier", username);
 
 		// Null rather than an exception, for the same reason as above: a user with no row here is a
 		// failed credential, not a server fault.
@@ -86,11 +92,15 @@ public class UserDao {
 	}
 
 	public List<OpenmrsUserModel> searchForOpenmrsUserQuery(Map<String, String> map, int firstResult, int maxResult) {
+		// Every clause is "this criterion was not given, or it matches", combined with and. They used to
+		// be combined with or, which made the query true for every user as soon as any one criterion was
+		// absent: a search by username alone returned the whole table, and which user came back first
+		// depended on nothing more than user_id order.
 		return em
 		        .createQuery("select u from OpenmrsUserModel u left outer join u.person.names n "
-		                + "where (:username is null or lower(u.username) like lower(:username)) or "
-		                + "(:email is null or lower(u.email) like lower(:email)) or "
-		                + "(:first is null or lower(n.givenName) like lower(:first)) or "
+		                + "where (:username is null or lower(u.username) like lower(:username)) and "
+		                + "(:email is null or lower(u.email) like lower(:email)) and "
+		                + "(:first is null or lower(n.givenName) like lower(:first)) and "
 		                + "(:last is null or lower(n.familyName) like lower(:last))",
 		            OpenmrsUserModel.class)
 		        .setParameter("username", map.get("username")).setParameter("email", map.get("email"))

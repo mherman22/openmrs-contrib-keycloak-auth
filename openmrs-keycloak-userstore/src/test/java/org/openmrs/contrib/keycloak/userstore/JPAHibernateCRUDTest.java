@@ -10,6 +10,8 @@
 package org.openmrs.contrib.keycloak.userstore;
 
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
@@ -62,7 +64,7 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void getUserCount() {
-		assertThat(userDao.getOpenmrsUserCount(), equalTo(3));
+		assertThat(userDao.getOpenmrsUserCount(), equalTo(4));
 	}
 
 	@Test
@@ -72,4 +74,57 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(query.get(0).getUserId(), equalTo(152));
 	}
 
+	/**
+	 * OpenMRS stores its admin account with no username, identified by system_id, and any user created
+	 * without a username the same way. Matching only on username left every such user unable to
+	 * authenticate through Keycloak, whatever password they typed. OpenMRS's own getUserByUsername
+	 * matches either column, which is why signing in to OpenMRS directly always worked for them.
+	 */
+	@Test
+	public void findsAUserThatHasOnlyASystemId() {
+		OpenmrsUserModel user = userDao.getOpenmrsUserByUsername("99-1");
+
+		assertThat(user, notNullValue());
+		assertThat(user.getUserId(), equalTo(99));
+		assertThat(user.getUsername(), nullValue());
+		assertThat(user.getSystemId(), equalTo("99-1"));
+	}
+
+	@Test
+	public void readsTheCredentialOfAUserThatHasOnlyASystemId() {
+		when(userModel.getUsername()).thenReturn("99-1");
+
+		String[] result = userDao.getUserPasswordAndSaltOnRecord(userModel);
+
+		assertThat(result, notNullValue());
+		assertThat(result[0], equalTo("Sys123"));
+		assertThat(result[1], equalTo("999"));
+	}
+
+	/** A name that matches neither column is simply absent, rather than an exception. */
+	@Test
+	public void answersNullForAUserThatDoesNotExist() {
+		assertThat(userDao.getOpenmrsUserByUsername("nobody-at-all"), nullValue());
+	}
+
+	/**
+	 * A search for one user must not answer with another. The criteria used to be combined with or, so
+	 * every clause for a criterion that was not supplied made the whole query true and the search
+	 * returned the entire table; the original assertion passed only because the user it wanted happened
+	 * to have the lowest id.
+	 */
+	@Test
+	public void searchDoesNotReturnUsersThatDoNotMatch() {
+		List<OpenmrsUserModel> found = userDao
+		        .searchForOpenmrsUserQuery(ImmutableMap.<String, String> builder().put("username", "Sid").build(), 0, 10);
+
+		assertThat(found.size(), equalTo(1));
+		assertThat(found.get(0).getUsername(), equalTo("Sid"));
+	}
+
+	@Test
+	public void searchForAUsernameNobodyHasFindsNobody() {
+		assertThat(userDao.searchForOpenmrsUserQuery(
+		    ImmutableMap.<String, String> builder().put("username", "nobody-at-all").build(), 0, 10).size(), equalTo(0));
+	}
 }

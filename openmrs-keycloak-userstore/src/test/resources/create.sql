@@ -16,7 +16,11 @@ ALTER TABLE person_name
 CREATE TABLE users (
   user_id int NOT NULL PRIMARY KEY,
   person_id int DEFAULT NULL,
-  username varchar(255) NOT NULL,
+  -- Nullable, as OpenMRS has it. The admin account ships with no username and is identified by its
+  -- system_id; declaring this NOT NULL here made a whole class of user impossible to represent in a
+  -- test, which is why a lookup that ignored system_id went unnoticed.
+  username varchar(255) DEFAULT NULL,
+  system_id varchar(50) DEFAULT NULL,
   email varchar(255) DEFAULT NULL,
   password varchar(128) DEFAULT NULL,
   salt varchar(128) DEFAULT NULL);

@@ -36,7 +36,9 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
 	@Override
 	public String getUsername() {
-		return openmrsUserModel.getUsername();
+		// Keycloak requires a username, and OpenMRS does not: the admin account has none. Falling back to
+		// the system id keeps that user identifiable rather than nameless, and it is the name they type.
+		return openmrsUserModel.getUsername() == null ? openmrsUserModel.getSystemId() : openmrsUserModel.getUsername();
 	}
 
 	@Override
