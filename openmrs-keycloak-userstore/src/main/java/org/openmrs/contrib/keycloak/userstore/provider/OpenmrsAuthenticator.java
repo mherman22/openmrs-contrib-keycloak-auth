@@ -145,9 +145,13 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		return buf.toString();
 	}
 
+	/**
+	 * Called by Keycloak at the end of every session. It has to release the EntityManager created for
+	 * this provider, or the connection behind it is never returned.
+	 */
 	@Override
 	public void close() {
-
+		userDao.close();
 	}
 
 	@Override

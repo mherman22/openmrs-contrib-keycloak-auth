@@ -29,6 +29,21 @@ public class UserDao {
 	}
 
 	/**
+	 * Releases the EntityManager, and with it the JDBC connection behind it.
+	 * <p>
+	 * Keycloak creates a provider per session and closes it when the session ends. This was never
+	 * called, so every authentication leaked a connection: Hibernate's built-in pool holds twenty, and
+	 * a server that had served a few hundred logins began answering "The internal connection pool has
+	 * reached its maximum size" to every request — including the admin console, which made it look like
+	 * Keycloak itself had failed rather than this provider.
+	 */
+	public void close() {
+		if (em != null && em.isOpen()) {
+			em.close();
+		}
+	}
+
+	/**
 	 * @return the user, or null if there is no such user.
 	 *         <p>
 	 *         Null, not an exception. Keycloak's federation contract is that a lookup for a user who

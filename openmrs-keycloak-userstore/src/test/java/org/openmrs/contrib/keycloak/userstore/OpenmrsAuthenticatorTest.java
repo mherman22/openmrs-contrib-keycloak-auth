@@ -107,4 +107,18 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		assertFalse(openmrsAuthenticator.isValid(realmModel, userModel, new org.keycloak.models.UserCredentialModel(null,
 		        org.keycloak.models.credential.PasswordCredentialModel.TYPE, "whatever")));
 	}
+
+	/**
+	 * Keycloak creates a provider per session and closes it when the session ends. This did nothing, so
+	 * every authentication leaked its EntityManager and the JDBC connection behind it. After a few
+	 * hundred logins the pool was exhausted and the server answered "the internal connection pool has
+	 * reached its maximum size" to everything, including its own admin console — which looks like
+	 * Keycloak failing rather than this provider.
+	 */
+	@Test
+	public void closingTheProviderReleasesItsEntityManager() {
+		openmrsAuthenticator.close();
+
+		org.mockito.Mockito.verify(userDao).close();
+	}
 }

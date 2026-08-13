@@ -155,6 +155,11 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 			// deployed against both MySQL and MariaDB, and naming one would be wrong for the other.
 			SETTINGS.setProperty(AvailableSettings.HBM2DDL_AUTO, Action.VALIDATE.name().toLowerCase());
 			SETTINGS.setProperty(AvailableSettings.SHOW_SQL, Boolean.FALSE.toString());
+			// Hibernate's built-in pool, which it says plainly is not for production use. It is stated
+			// here rather than left at the default so the ceiling is visible: when providers leaked
+			// connections, this is the number that ran out, and the server then answered
+			// "internal connection pool has reached its maximum size" to every request.
+			SETTINGS.setProperty(AvailableSettings.POOL_SIZE, "20");
 			// USE_REFLECTION_OPTIMIZER is gone in Hibernate 6, which changed how bytecode
 			// enhancement works. It was only a performance hint.
 		}
