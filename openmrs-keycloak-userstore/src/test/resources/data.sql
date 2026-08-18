@@ -32,6 +32,12 @@ INSERT INTO users (user_id, username, password, salt) VALUES (254,'odd-hash','$2
 INSERT INTO users (user_id, username, password, salt, retired) VALUES (252,'retired-nurse',
     '467b17f2aa91750a81b611c1c1efc7599e9e9b9e484af0b7e79ed15d6494ecf8f21990c8d44283c5f4052158ff7f1a1e0c0faf5af091513d61b023d3ec71b5ff','r1',TRUE);
 
+-- A half-set credential: a password with no salt. OpenMRS always writes a salt when it sets a
+-- password, so a row like this predates that and OpenMRS cannot authenticate it either -- it hashes
+-- the password with the literal text "null" appended.
+INSERT INTO users (user_id, username, password, salt) VALUES (255,'no-salt',
+    '0dd4de366d0ee9c2cad07be099cdb954d8f60f8eedd4a968fa624e51bc8022ebb85e914bf39846a5dcbc9d89fd8b86a7143a1698136df05cf1ce3dc595df0321',NULL);
+
 -- One user's username is another's system_id. OpenMRS refuses this pair when a user is saved, but no
 -- database constraint prevents it, and the credential has to be read for the user that was resolved
 -- rather than for whatever the name matches next. SHA-512 of 'Four001' + 'c4' and 'Four011' + 'c5'.

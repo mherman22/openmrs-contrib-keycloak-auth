@@ -14,6 +14,8 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.concurrent.TimeUnit;
 
@@ -25,6 +27,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -115,6 +118,44 @@ public class CredentialValidationTest extends JPAHibernateTest {
 	@Test
 	public void refusesAnEmptyPassword() {
 		assertFalse(authenticates("SidVaish", ""));
+	}
+
+	/** A password with no salt: OpenMRS never writes one, and cannot authenticate one either. */
+	@Test
+	public void refusesAUserWhosePasswordHasNoSalt() {
+		assertFalse(authenticates("no-salt", "Sid123"));
+	}
+
+	@Test
+	public void refusesTheWrongPasswordForTheUserIdentifiedBySystemId() {
+		assertFalse(authenticates("99-1", "Sys124"));
+	}
+
+	/** The stored hash is not a password, however much it looks like one to whoever read the column. */
+	@Test
+	public void refusesTheStoredHashOfferedAsThePassword() {
+		assertFalse(authenticates("SidVaish",
+		    "0dd4de366d0ee9c2cad07be099cdb954d8f60f8eedd4a968fa624e51bc8022ebb85e914bf39846a5dcbc9d89fd8b86a7143a1698136df05cf1ce3dc595df0321"));
+	}
+
+	/** Only passwords are checked here. Anything else is not this provider's to answer. */
+	@Test
+	public void refusesACredentialThatIsNotAPassword() {
+		UserModel user = authenticator.getUserByUsername(realm, "SidVaish");
+
+		assertFalse(authenticator.isValid(realm, user, new UserCredentialModel(null, OTPCredentialModel.TYPE, "Sid123")));
+	}
+
+	/**
+	 * A Keycloak id that does not carry an OpenMRS user_id. Nothing should be read for it, and nothing
+	 * should throw either.
+	 */
+	@Test
+	public void refusesAnIdThatDoesNotIdentifyAnOpenmrsUser() {
+		UserModel notOurs = mock(UserModel.class);
+		when(notOurs.getId()).thenReturn("f:openmrs:not-a-number");
+
+		assertFalse(authenticator.isValid(realm, notOurs, credential("anything")));
 	}
 
 	@Test

@@ -68,6 +68,19 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(userDao.getUserPasswordAndSaltOnRecord(252), nullValue());
 	}
 
+	/**
+	 * A retired user is still found. They are refused at the credential check and reported to Keycloak
+	 * as disabled, rather than made invisible: an administrator has to be able to see the account they
+	 * retired in the Keycloak console and in a user search.
+	 */
+	@Test
+	public void stillFindsARetiredUser() {
+		OpenmrsUserModel retired = userDao.getOpenmrsUserByUsername("retired-nurse");
+
+		assertThat(retired, notNullValue());
+		assertThat(retired.getRetired(), equalTo(true));
+	}
+
 	/** A user id nobody has. */
 	@Test
 	public void answersNullForTheCredentialOfAUserThatDoesNotExist() {
@@ -87,7 +100,7 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void getUserCount() {
-		assertThat(userDao.getOpenmrsUserCount(), equalTo(11));
+		assertThat(userDao.getOpenmrsUserCount(), equalTo(12));
 	}
 
 	@Test
