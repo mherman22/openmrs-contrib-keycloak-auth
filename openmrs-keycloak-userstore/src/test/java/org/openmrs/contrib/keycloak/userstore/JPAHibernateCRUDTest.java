@@ -62,6 +62,12 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(result[1], nullValue());
 	}
 
+	/** A retired user has no credential to read, as in OpenMRS's own authenticate. */
+	@Test
+	public void answersNullForTheCredentialOfARetiredUser() {
+		assertThat(userDao.getUserPasswordAndSaltOnRecord(252), nullValue());
+	}
+
 	/** A user id nobody has. */
 	@Test
 	public void answersNullForTheCredentialOfAUserThatDoesNotExist() {
@@ -81,7 +87,7 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void getUserCount() {
-		assertThat(userDao.getOpenmrsUserCount(), equalTo(9));
+		assertThat(userDao.getOpenmrsUserCount(), equalTo(10));
 	}
 
 	@Test

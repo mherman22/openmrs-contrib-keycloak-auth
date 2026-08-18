@@ -131,6 +131,24 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertFalse(authenticates("admin", ""));
 	}
 
+	/**
+	 * The password is right. The user has been retired in OpenMRS, which is what an administrator does
+	 * when someone leaves, and OpenMRS's own authenticate will not look at a retired user at all. This
+	 * provider read nothing of the sort, so retiring a user revoked their OpenMRS access and left them
+	 * signing in to every application behind this realm.
+	 */
+	@Test
+	public void refusesARetiredUserWithTheRightPassword() {
+		assertFalse(authenticates("retired-nurse", "Retired1"));
+	}
+
+	/** And Keycloak is told, so its own checks and its admin console agree. */
+	@Test
+	public void reportsARetiredUserAsDisabled() {
+		assertFalse(authenticator.getUserByUsername(realm, "retired-nurse").isEnabled());
+		assertTrue(authenticator.getUserByUsername(realm, "SidVaish").isEnabled());
+	}
+
 	/** Nothing OpenMRS wrote, so nothing can match it. */
 	@Test
 	public void refusesAPasswordHashInAFormatNoOpenmrsVersionWrites() {

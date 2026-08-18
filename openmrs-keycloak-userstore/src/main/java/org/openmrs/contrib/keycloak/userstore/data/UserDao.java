@@ -85,9 +85,14 @@ public class UserDao {
 	 *         so it was not guaranteed to answer with the row the identity had come from. OpenMRS
 	 *         rejects a username that collides with another user's system_id when a user is saved, but
 	 *         nothing in the database enforces that.
+	 *         <p>
+	 *         Retired users have no credential here, the same answer OpenMRS's own authenticate gives
+	 *         by carrying "and u.retired = false" in its lookup. UserAdapter reports them as disabled
+	 *         as well; this is the gate that holds if some flow reaches the credential check anyway.
 	 */
 	public String[] getUserPasswordAndSaltOnRecord(Integer userId) {
-		Query query = em.createNativeQuery("select password, salt from users u where u.user_id = :userId");
+		Query query = em
+		        .createNativeQuery("select password, salt from users u where u.user_id = :userId and u.retired = false");
 		query.setParameter("userId", userId);
 
 		// Null rather than an exception, for the same reason as above: a user with no row here is a

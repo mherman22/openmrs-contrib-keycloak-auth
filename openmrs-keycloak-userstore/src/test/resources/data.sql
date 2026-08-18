@@ -28,6 +28,10 @@ INSERT INTO users (user_id, username, password, salt) VALUES (251,'legacy-oldhex
 -- Not written by OpenMRS, and no password can ever match it.
 INSERT INTO users (user_id, username, password, salt) VALUES (254,'odd-hash','$2a$10$notAnOpenmrsPasswordHash','oh');
 
+-- Retired in OpenMRS, with a password that is otherwise perfectly good: SHA-512 of 'Retired1' + 'r1'.
+INSERT INTO users (user_id, username, password, salt, retired) VALUES (252,'retired-nurse',
+    '467b17f2aa91750a81b611c1c1efc7599e9e9b9e484af0b7e79ed15d6494ecf8f21990c8d44283c5f4052158ff7f1a1e0c0faf5af091513d61b023d3ec71b5ff','r1',TRUE);
+
 -- One user's username is another's system_id. OpenMRS refuses this pair when a user is saved, but no
 -- database constraint prevents it, and the credential has to be read for the user that was resolved
 -- rather than for whatever the name matches next. SHA-512 of 'Four001' + 'c4' and 'Four011' + 'c5'.

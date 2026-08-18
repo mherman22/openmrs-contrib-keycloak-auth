@@ -97,6 +97,14 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			return false;
 		}
 
+		if (!userModel.isEnabled()) {
+			// Retired in OpenMRS. Keycloak checks this itself before it asks us, but this is the
+			// credential check: it answers for itself rather than relying on having been asked in the
+			// right order.
+			log.info("Refusing the credential of OpenMRS user {}: the user is retired", userId);
+			return false;
+		}
+
 		String[] passwordAndSalt;
 		try {
 			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userId);

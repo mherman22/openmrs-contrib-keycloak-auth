@@ -46,6 +46,17 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 		openmrsUserModel.setUsername(username);
 	}
 
+	/**
+	 * A retired OpenMRS user is a disabled Keycloak user. AbstractUserAdapterFederatedStorage reads
+	 * this from an attribute in Keycloak's own federated storage and answers true when it is unset,
+	 * which it is for every OpenMRS user, so without this every retired user passed Keycloak's
+	 * enabledUser check.
+	 */
+	@Override
+	public boolean isEnabled() {
+		return !Boolean.TRUE.equals(openmrsUserModel.getRetired());
+	}
+
 	@Override
 	public String getEmail() {
 		return openmrsUserModel.getEmail();

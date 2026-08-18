@@ -41,4 +41,13 @@ public class OpenmrsUserModel {
 	private String systemId;
 
 	private String email;
+
+	/**
+	 * How OpenMRS disables an account. Its own authenticate carries "and u.retired = false" in the
+	 * lookup, so a retired user cannot sign in to OpenMRS whatever password they type; nothing here
+	 * read the column, so retiring a user revoked their OpenMRS access and left their Keycloak access
+	 * untouched. Not null in the OpenMRS schema, but read as a Boolean so odd data cannot enable
+	 * anyone.
+	 */
+	private Boolean retired;
 }
