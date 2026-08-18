@@ -107,6 +107,13 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 
 		String[] passwordAndSalt;
 		try {
+			if (userDao.isLockedOutInOpenmrs(userId)) {
+				// Before the password is looked at, as OpenMRS does it, so a locked account learns
+				// nothing about whether the password was right.
+				log.info("Refusing the credential of OpenMRS user {}: OpenMRS has the account locked out", userId);
+				return false;
+			}
+
 			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userId);
 		}
 		catch (PersistenceException e) {

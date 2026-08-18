@@ -15,6 +15,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.concurrent.TimeUnit;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -147,6 +149,86 @@ public class CredentialValidationTest extends JPAHibernateTest {
 	public void reportsARetiredUserAsDisabled() {
 		assertFalse(authenticator.getUserByUsername(realm, "retired-nurse").isEnabled());
 		assertTrue(authenticator.getUserByUsername(realm, "SidVaish").isEnabled());
+	}
+
+	/**
+	 * OpenMRS locks an account after seven failed sign-ins and keeps it locked for
+	 * security.unlockAccountWaitingTime minutes. Keycloak read none of that, so an account OpenMRS had
+	 * locked went on authenticating here with the right password -- and, since this provider does not
+	 * write to OpenMRS, failures at the Keycloak form never counted towards that lock either.
+	 */
+	@Test
+	public void refusesTheRightPasswordWhileOpenmrsHasTheAccountLockedOut() {
+		lockedOutAt(System.currentTimeMillis());
+
+		assertFalse(authenticates("locked-out", "Locked1"));
+	}
+
+	/** The waiting time comes from OpenMRS's own global property: ten minutes in this fixture. */
+	@Test
+	public void keepsTheAccountLockedForAsLongAsOpenmrsWould() {
+		lockedOutAt(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(6));
+
+		assertFalse(authenticates("locked-out", "Locked1"));
+	}
+
+	@Test
+	public void authenticatesOnceTheOpenmrsLockoutHasRunOut() {
+		lockedOutAt(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(11));
+
+		assertTrue(authenticates("locked-out", "Locked1"));
+	}
+
+	/** How OpenMRS records an account that is not locked. */
+	@Test
+	public void treatsAZeroTimestampAsNotLockedOut() {
+		lockedOut("0");
+
+		assertTrue(authenticates("locked-out", "Locked1"));
+	}
+
+	/** An unreadable timestamp must not lock everyone out, which is also what OpenMRS does with one. */
+	@Test
+	public void treatsAnUnreadableTimestampAsNotLockedOut() {
+		lockedOut("not a timestamp");
+
+		assertTrue(authenticates("locked-out", "Locked1"));
+	}
+
+	/** With no global property set, OpenMRS's own default of five minutes applies. */
+	@Test
+	public void fallsBackToTheOpenmrsDefaultWaitingTime() {
+		lockedOutAt(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(6));
+		unlockWaitingTime(null);
+		try {
+			assertTrue(authenticates("locked-out", "Locked1"));
+		}
+		finally {
+			unlockWaitingTime("10");
+		}
+	}
+
+	private void lockedOutAt(long timestamp) {
+		lockedOut(String.valueOf(timestamp));
+	}
+
+	private void lockedOut(String propertyValue) {
+		inTransaction(
+		    "update user_property set property_value = :value " + "where user_id = 253 and property = 'lockoutTimestamp'",
+		    propertyValue);
+	}
+
+	private void unlockWaitingTime(String minutes) {
+		inTransaction(
+		    "update global_property set property_value = :value " + "where property = 'security.unlockAccountWaitingTime'",
+		    minutes);
+	}
+
+	private void inTransaction(String statement, String value) {
+		em.getTransaction().begin();
+		em.createNativeQuery(statement).setParameter("value", value).executeUpdate();
+		em.getTransaction().commit();
+		em.clear();
 	}
 
 	/** Nothing OpenMRS wrote, so nothing can match it. */

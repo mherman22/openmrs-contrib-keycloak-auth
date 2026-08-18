@@ -30,3 +30,16 @@ CREATE TABLE users (
 ALTER TABLE users
     ADD FOREIGN KEY (person_id)
     REFERENCES person (person_id);
+
+-- OpenMRS counts failed sign-ins and locks accounts through these two tables: lockoutTimestamp and
+-- loginAttempts per user, and security.unlockAccountWaitingTime for the whole installation. Declared
+-- with the types OpenMRS uses, clob included, since how the driver hands those back is the question.
+CREATE TABLE user_property (
+  user_id int NOT NULL,
+  property varchar(255) NOT NULL,
+  property_value clob,
+  PRIMARY KEY (user_id, property));
+
+CREATE TABLE global_property (
+  property varchar(255) NOT NULL PRIMARY KEY,
+  property_value clob);

@@ -9,16 +9,26 @@
  */
 package org.openmrs.contrib.keycloak.userstore.data;
 
+import java.sql.Clob;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 import org.apache.commons.lang3.NotImplementedException;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class UserDao {
+
+	/** OpenMRS's default for security.unlockAccountWaitingTime, in minutes. */
+	private static final long DEFAULT_UNLOCK_WAIT_MINUTES = 5;
+
+	private static final Logger log = LoggerFactory.getLogger(UserDao.class);
 
 	private final EntityManager em;
 
@@ -110,8 +120,98 @@ public class UserDao {
 		return new String[] { asString(columns[0]), asString(columns[1]) };
 	}
 
+	/**
+	 * @return whether OpenMRS has this account locked out at this moment.
+	 *         <p>
+	 *         OpenMRS counts failed sign-ins in the loginAttempts user property and, past
+	 *         security.allowedFailedLoginsBeforeLockout attempts (7 by default), stamps
+	 *         lockoutTimestamp and refuses the user for security.unlockAccountWaitingTime minutes (5 by
+	 *         default). Signing in through Keycloak consulted none of that, so an account OpenMRS had
+	 *         locked went on authenticating here.
+	 *         <p>
+	 *         Read only. This provider does not write to OpenMRS, so a failure at the Keycloak login
+	 *         form still does not count towards that threshold: Keycloak's own brute force detection is
+	 *         what has to stop guessing at this door, and it is off until the realm turns it on.
+	 */
+	public boolean isLockedOutInOpenmrs(Integer userId) {
+		String lockedAt = userProperty(userId, "lockoutTimestamp");
+		if (lockedAt == null || lockedAt.isBlank() || "0".equals(lockedAt.trim())) {
+			return false;
+		}
+
+		long lockedAtMs;
+		try {
+			lockedAtMs = Long.parseLong(lockedAt.trim());
+		}
+		catch (NumberFormatException e) {
+			// What OpenMRS does with an unreadable value: say so, and let the user try.
+			log.warn("Bad value stored in the lockoutTimestamp user property of OpenMRS user {}: '{}'", userId, lockedAt);
+			return false;
+		}
+
+		return System.currentTimeMillis() - lockedAtMs <= unlockWaitMs();
+	}
+
+	/** How long OpenMRS keeps an account locked, from the same global property OpenMRS reads. */
+	private long unlockWaitMs() {
+		String waitingTime = globalProperty("security.unlockAccountWaitingTime");
+		if (waitingTime != null && !waitingTime.isBlank()) {
+			try {
+				return TimeUnit.MINUTES.toMillis(Long.parseLong(waitingTime.trim()));
+			}
+			catch (NumberFormatException e) {
+				log.warn("Unable to read the global property security.unlockAccountWaitingTime as a number: '{}'. "
+				        + "Using the OpenMRS default of {} minutes.",
+				    waitingTime, DEFAULT_UNLOCK_WAIT_MINUTES);
+			}
+		}
+
+		return TimeUnit.MINUTES.toMillis(DEFAULT_UNLOCK_WAIT_MINUTES);
+	}
+
+	private String userProperty(Integer userId, String property) {
+		Query query = em.createNativeQuery(
+		    "select property_value from user_property where user_id = :userId and property = :property");
+		query.setParameter("userId", userId);
+		query.setParameter("property", property);
+		return firstValue(query);
+	}
+
+	private String globalProperty(String property) {
+		Query query = em.createNativeQuery("select property_value from global_property where property = :property");
+		query.setParameter("property", property);
+		return firstValue(query);
+	}
+
+	/**
+	 * The first value of a single column query, or null for no row -- and for a row whose value is
+	 * null, which these columns allow. Stream.findFirst cannot carry a null and throws on one.
+	 */
+	private static String firstValue(Query query) {
+		List<?> results = query.setMaxResults(1).getResultList();
+		return results.isEmpty() ? null : asString(results.get(0));
+	}
+
 	private static String asString(Object column) {
-		return column == null ? null : column.toString();
+		if (column == null) {
+			return null;
+		}
+
+		// OpenMRS declares the property columns as CLOB, and a driver may hand one back as a
+		// java.sql.Clob rather than a String -- H2 does. Its toString is a handle ("clob2: '...'"),
+		// not the value, so reading it that way silently produced nonsense rather than a timestamp.
+		if (column instanceof Clob) {
+			Clob clob = (Clob) column;
+			try {
+				return clob.getSubString(1, (int) clob.length());
+			}
+			catch (SQLException e) {
+				log.error("Could not read a property value out of the OpenMRS database", e);
+				return null;
+			}
+		}
+
+		return column.toString();
 	}
 
 	public int getOpenmrsUserCount() {

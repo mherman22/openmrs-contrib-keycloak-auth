@@ -87,7 +87,7 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void getUserCount() {
-		assertThat(userDao.getOpenmrsUserCount(), equalTo(10));
+		assertThat(userDao.getOpenmrsUserCount(), equalTo(11));
 	}
 
 	@Test

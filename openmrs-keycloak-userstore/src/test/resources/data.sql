@@ -39,3 +39,13 @@ INSERT INTO users (user_id, username, password, salt) VALUES (400,'collide',
     '3030ef2a096cc11a89238a2af268fa9825fd2e17c495bc4bd7d5fca0b5fc0052de029521c692cfedb03a71b79caf2c65699f0439580fa4f7d1dfc1fa564f1c31','c4');
 INSERT INTO users (user_id, username, system_id, password, salt) VALUES (401,NULL,'collide',
     'b3e229442709459fc811a049f7a6e1933865f5160f2269c9a3b2641f1bac53f4fefbabba6f0f00e6ef8acfc9e1b55a6f5aa619ad1ab71bb45ec38d62fcc17970','c5');
+
+-- An ordinary user, whom the lockout tests lock and unlock by writing the timestamp OpenMRS would
+-- have written. SHA-512 of 'Locked1' + 'k1'.
+INSERT INTO users (user_id, username, password, salt) VALUES (253,'locked-out',
+    'a1b84ea953b996c719f140eb770a1bd96ed0bc7f360a15264b2ddba5d3262393d0e1f4fcc8bf02834d891e3fff8995e4e4c437fea8c146ca0df324a93358fcad','k1');
+INSERT INTO user_property (user_id, property, property_value) VALUES (253,'lockoutTimestamp','0');
+INSERT INTO user_property (user_id, property, property_value) VALUES (253,'loginAttempts','7');
+
+-- Ten minutes rather than the default five, so a test can tell that this is being read.
+INSERT INTO global_property (property, property_value) VALUES ('security.unlockAccountWaitingTime','10');
