@@ -53,6 +53,7 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		openmrsAuthenticator = new OpenmrsAuthenticator(session, model, userDao);
 
 		openmrsUserModel = new OpenmrsUserModel();
+		openmrsUserModel.setUserId(152);
 		openmrsUserModel.setUsername("admin");
 	}
 
@@ -101,8 +102,9 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 	 */
 	@Test
 	public void aUserWithNoCredentialRowSimplyFailsToAuthenticate() {
+		when(userDao.getOpenmrsUserByUsername("admin")).thenReturn(openmrsUserModel);
 		UserModel userModel = openmrsAuthenticator.getUserByUsername(realmModel, "admin");
-		when(userDao.getUserPasswordAndSaltOnRecord(userModel)).thenReturn(null);
+		when(userDao.getUserPasswordAndSaltOnRecord(152)).thenReturn(null);
 
 		assertFalse(openmrsAuthenticator.isValid(realmModel, userModel, new org.keycloak.models.UserCredentialModel(null,
 		        org.keycloak.models.credential.PasswordCredentialModel.TYPE, "whatever")));

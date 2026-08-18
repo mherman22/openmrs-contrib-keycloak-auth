@@ -13,27 +13,18 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.Mockito.when;
 
 import java.util.List;
 
 import com.google.common.collect.ImmutableMap;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.keycloak.models.UserModel;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 
-@RunWith(MockitoJUnitRunner.class)
 public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	private UserDao userDao;
-
-	@Mock
-	private UserModel userModel;
 
 	@Before
 	public void setup() {
@@ -54,17 +45,43 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void getPasswordAndSalt() {
-		when(userModel.getUsername()).thenReturn("SidVaish");
+		String[] result = userDao.getUserPasswordAndSaltOnRecord(200);
 
-		String[] result = userDao.getUserPasswordAndSaltOnRecord(userModel);
-
-		assertThat(result[0], equalTo("Sid123"));
+		assertThat(result[0], equalTo(
+		    "0dd4de366d0ee9c2cad07be099cdb954d8f60f8eedd4a968fa624e51bc8022ebb85e914bf39846a5dcbc9d89fd8b86a7143a1698136df05cf1ce3dc595df0321"));
 		assertThat(result[1], equalTo("123"));
+	}
+
+	/** A user who has never had a password set. Both columns are null, and reading them threw. */
+	@Test
+	public void readsAUserThatHasNoPasswordWithoutThrowing() {
+		String[] result = userDao.getUserPasswordAndSaltOnRecord(152);
+
+		assertThat(result, notNullValue());
+		assertThat(result[0], nullValue());
+		assertThat(result[1], nullValue());
+	}
+
+	/** A user id nobody has. */
+	@Test
+	public void answersNullForTheCredentialOfAUserThatDoesNotExist() {
+		assertThat(userDao.getUserPasswordAndSaltOnRecord(4040), nullValue());
+	}
+
+	/**
+	 * User 400's username is user 401's system_id. The credential must be the one belonging to the user
+	 * that was asked for: this used to match the name a second time, in a separate unordered query, and
+	 * either row could have answered.
+	 */
+	@Test
+	public void readsTheCredentialOfTheUserItIsAskedFor() {
+		assertThat(userDao.getUserPasswordAndSaltOnRecord(400)[1], equalTo("c4"));
+		assertThat(userDao.getUserPasswordAndSaltOnRecord(401)[1], equalTo("c5"));
 	}
 
 	@Test
 	public void getUserCount() {
-		assertThat(userDao.getOpenmrsUserCount(), equalTo(4));
+		assertThat(userDao.getOpenmrsUserCount(), equalTo(9));
 	}
 
 	@Test
@@ -92,12 +109,11 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 	@Test
 	public void readsTheCredentialOfAUserThatHasOnlyASystemId() {
-		when(userModel.getUsername()).thenReturn("99-1");
-
-		String[] result = userDao.getUserPasswordAndSaltOnRecord(userModel);
+		String[] result = userDao.getUserPasswordAndSaltOnRecord(99);
 
 		assertThat(result, notNullValue());
-		assertThat(result[0], equalTo("Sys123"));
+		assertThat(result[0], equalTo(
+		    "710cfad9cfcbd4b00d0bce89d9d812c904e307f9e34eb157e43e28e5de3f8f46007561b1fc8de0da85bdd2d4a770a5099076972ffe559bde3d7176aeb90a01a0"));
 		assertThat(result[1], equalTo("999"));
 	}
 

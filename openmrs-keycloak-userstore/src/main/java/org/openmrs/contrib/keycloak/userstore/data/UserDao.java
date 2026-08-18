@@ -9,7 +9,6 @@
  */
 package org.openmrs.contrib.keycloak.userstore.data;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -17,7 +16,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.StringUtils;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 
 public class UserDao {
@@ -78,22 +76,37 @@ public class UserDao {
 		return query.getResultStream().findFirst().orElse(null);
 	}
 
-	public String[] getUserPasswordAndSaltOnRecord(org.keycloak.models.UserModel userModel) {
-		String username = userModel.getUsername();
-		if (StringUtils.isBlank(username)) {
-			throw new IllegalArgumentException("Username cannot be blank");
-		}
-
-		// Either column, for the same reason as the lookup above.
-		Query query = em.createNativeQuery(
-		    "select password, salt from users u where u.username = :identifier or u.system_id = :identifier");
-		query.setParameter("identifier", username);
+	/**
+	 * @return the password and salt on record, or null if there is no such user.
+	 *         <p>
+	 *         Keyed by user_id: the identity the lookup already resolved, and the same key OpenMRS uses
+	 *         at this point in its own authenticate. Matching the name again ran a second query over
+	 *         the same "username or system_id" predicate, unordered and in native SQL rather than JPQL,
+	 *         so it was not guaranteed to answer with the row the identity had come from. OpenMRS
+	 *         rejects a username that collides with another user's system_id when a user is saved, but
+	 *         nothing in the database enforces that.
+	 */
+	public String[] getUserPasswordAndSaltOnRecord(Integer userId) {
+		Query query = em.createNativeQuery("select password, salt from users u where u.user_id = :userId");
+		query.setParameter("userId", userId);
 
 		// Null rather than an exception, for the same reason as above: a user with no row here is a
 		// failed credential, not a server fault.
 		Object row = query.getResultStream().findFirst().orElse(null);
+		if (row == null) {
+			return null;
+		}
 
-		return row == null ? null : Arrays.stream((Object[]) row).map(Object::toString).toArray(String[]::new);
+		// Either column may be null, for a user who has never had a password set. Mapping the row
+		// through Object::toString threw a NullPointerException out of the credential check, and
+		// because isValid catches only PersistenceException it reached the browser as
+		// "Unexpected error when handling authentication request" rather than a failed sign-in.
+		Object[] columns = (Object[]) row;
+		return new String[] { asString(columns[0]), asString(columns[1]) };
+	}
+
+	private static String asString(Object column) {
+		return column == null ? null : column.toString();
 	}
 
 	public int getOpenmrsUserCount() {

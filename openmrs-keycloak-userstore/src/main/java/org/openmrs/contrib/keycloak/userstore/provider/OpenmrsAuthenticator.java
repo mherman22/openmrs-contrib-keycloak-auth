@@ -40,18 +40,7 @@ import org.slf4j.LoggerFactory;
 @Setter(AccessLevel.PACKAGE)
 public class OpenmrsAuthenticator implements CredentialInputValidator, UserLookupProvider, UserStorageProvider, UserQueryProvider {
 
-	protected static final MessageDigest MESSAGE_DIGEST;
-
 	private static final Logger log = LoggerFactory.getLogger(OpenmrsAuthenticator.class);
-
-	static {
-		try {
-			MESSAGE_DIGEST = MessageDigest.getInstance("SHA-512");
-		}
-		catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException(e);
-		}
-	}
 
 	protected KeycloakSession session;
 
@@ -103,9 +92,14 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			return false;
 		}
 
+		Integer userId = openmrsUserId(userModel);
+		if (userId == null) {
+			return false;
+		}
+
 		String[] passwordAndSalt;
 		try {
-			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userModel);
+			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userId);
 		}
 		catch (PersistenceException e) {
 			log.error("Caught exception while fetching password and salt from database", e);
@@ -122,12 +116,103 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		String currentPassword = credentialInput.getChallengeResponse();
 
 		if (passwordOnRecord == null || saltOnRecord == null || currentPassword == null) {
+			// A user who has never had a password set. OpenMRS leaves both columns null for them, and
+			// they cannot sign in anywhere until one is set.
 			return false;
 		}
 
-		String passwordToHash = currentPassword + saltOnRecord;
-		byte[] input = passwordToHash.getBytes(StandardCharsets.UTF_8);
-		return passwordOnRecord.equals(hexString(MESSAGE_DIGEST.digest(input)));
+		if (hashMatches(passwordOnRecord, currentPassword + saltOnRecord)) {
+			return true;
+		}
+
+		if (!isRecognisedHashFormat(passwordOnRecord)) {
+			log.warn("The password on record for OpenMRS user {} is {} characters long and is neither a SHA-512 nor a "
+			        + "SHA-1 hash. No password can match it, so this user cannot sign in until their OpenMRS password "
+			        + "is set again.",
+			    userId, passwordOnRecord.length());
+		}
+
+		return false;
+	}
+
+	/**
+	 * @return the OpenMRS user_id this Keycloak id was built from, or null if it does not carry one.
+	 *         <p>
+	 *         The credential is read for the user the lookup resolved, not for whatever the name
+	 *         matches a second time.
+	 */
+	private Integer openmrsUserId(UserModel userModel) {
+		String externalId = StorageId.externalId(userModel.getId());
+		try {
+			return Integer.valueOf(externalId);
+		}
+		catch (NumberFormatException e) {
+			log.warn("Cannot check a credential for '{}': it does not identify an OpenMRS user", userModel.getId());
+			return null;
+		}
+	}
+
+	/**
+	 * The same three encodings OpenMRS's own {@code Security.hashMatches} accepts, in the order it
+	 * tries them: SHA-512 hex, SHA-1 hex, and SHA-1 rendered by the historic hex routine that dropped
+	 * the leading zero of every byte below 0x10. A database that has ever run an older OpenMRS holds
+	 * all three, and they are still what OpenMRS accepts today, so supporting only the first left users
+	 * who can sign in to OpenMRS unable to sign in through Keycloak -- indistinguishably, to them, from
+	 * having mistyped their password.
+	 */
+	private boolean hashMatches(String hashOnRecord, String passwordAndSalt) {
+		byte[] input = passwordAndSalt.getBytes(StandardCharsets.UTF_8);
+		return matches(hashOnRecord, hexString(digest("SHA-512", input)))
+		        || matches(hashOnRecord, hexString(digest("SHA-1", input)))
+		        || matches(hashOnRecord, incorrectHexString(digest("SHA-1", input)));
+	}
+
+	/**
+	 * A digest per call. The single shared MessageDigest this replaces was stateful and unsynchronised,
+	 * so two logins at once could interleave into one another's hash and fail for no reason the user
+	 * could see or repeat -- and with NO_CACHE, every login goes through here.
+	 */
+	private static byte[] digest(String algorithm, byte[] input) {
+		try {
+			return MessageDigest.getInstance(algorithm).digest(input);
+		}
+		catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException(algorithm + " is needed to check OpenMRS passwords", e);
+		}
+	}
+
+	/** Compared in constant time: String.equals stops at the first character that differs. */
+	private static boolean matches(String hashOnRecord, String candidate) {
+		return MessageDigest.isEqual(hashOnRecord.getBytes(StandardCharsets.UTF_8),
+		    candidate.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * The shapes {@link #hashMatches} can produce: 128 hex characters of SHA-512, or at most 40 of
+	 * SHA-1, fewer where the historic routine dropped leading zeros. Anything else was written by
+	 * something that is not OpenMRS, and no password will ever match it, so say so once rather than
+	 * leaving it as an ordinary failed sign-in.
+	 */
+	private static boolean isRecognisedHashFormat(String hashOnRecord) {
+		if (hashOnRecord.isEmpty() || (hashOnRecord.length() != 128 && hashOnRecord.length() > 40)) {
+			return false;
+		}
+
+		return hashOnRecord.chars().allMatch(character -> Character.digit(character, 16) >= 0);
+	}
+
+	/**
+	 * OpenMRS's {@code Security.incorrectHexString}: Integer.toHexString of each byte, which renders
+	 * anything below 0x10 as a single character. Hashes written before that was fixed are still in
+	 * OpenMRS databases and OpenMRS still accepts them.
+	 */
+	private String incorrectHexString(byte[] block) {
+		StringBuilder buf = new StringBuilder();
+		for (byte aBlock : block) {
+			buf.append(Integer.toHexString(aBlock & 0xFF));
+		}
+
+		return buf.toString();
 	}
 
 	private String hexString(byte[] block) {
