@@ -9,12 +9,11 @@
  */
 package org.openmrs.contrib.keycloak.userstore;
 
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
-
 import java.io.InputStreamReader;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Persistence;
 import org.h2.tools.RunScript;
 import org.hibernate.Session;
 import org.junit.After;
@@ -23,15 +22,15 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 
 public class JPAHibernateTest {
-	
+
 	protected static EntityManagerFactory emf;
-	
+
 	protected EntityManager em;
-	
+
 	@BeforeClass
 	public static void init() {
 		emf = Persistence.createEntityManagerFactory("openmrs-persistence-test");
-		
+
 		EntityManager em = emf.createEntityManager();
 		em.getTransaction().begin();
 		try {
@@ -47,17 +46,17 @@ public class JPAHibernateTest {
 			em.close();
 		}
 	}
-	
+
 	@Before
 	public void loadEntityManager() {
 		em = emf.createEntityManager();
 	}
-	
+
 	@After
 	public void clearEntityManager() {
 		em.close();
 	}
-	
+
 	@AfterClass
 	public static void tearDown() {
 		emf.close();

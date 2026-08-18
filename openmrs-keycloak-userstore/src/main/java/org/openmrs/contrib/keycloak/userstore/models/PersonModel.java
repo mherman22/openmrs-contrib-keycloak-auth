@@ -9,29 +9,28 @@
  */
 package org.openmrs.contrib.keycloak.userstore.models;
 
-import javax.persistence.CascadeType;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.OneToMany;
-import javax.persistence.Table;
-
 import java.util.HashSet;
 import java.util.Set;
 
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.Table;
 import lombok.Data;
 
 @Entity
 @Table(name = "person")
 @Data
 public class PersonModel {
-	
+
 	@Id
 	@Column(name = "person_id")
 	protected Integer personId;
-	
+
 	@OneToMany(cascade = CascadeType.ALL, mappedBy = "person", orphanRemoval = true)
 	private Set<PersonNameModel> names = new HashSet<>();
-	
+
 	private String gender;
 }

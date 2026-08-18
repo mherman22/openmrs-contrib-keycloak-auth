@@ -17,38 +17,51 @@ import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 
 public class UserAdapter extends AbstractUserAdapterFederatedStorage {
-	
+
 	private final OpenmrsUserModel openmrsUserModel;
-	
+
 	private final String keycloakStorageId;
-	
+
 	public UserAdapter(KeycloakSession session, RealmModel realm, ComponentModel storageProviderModel,
 	    OpenmrsUserModel openmrsUserModel) {
 		super(session, realm, storageProviderModel);
 		this.openmrsUserModel = openmrsUserModel;
 		keycloakStorageId = StorageId.keycloakId(storageProviderModel, String.valueOf(openmrsUserModel.getUserId()));
 	}
-	
+
 	@Override
 	public String getId() {
 		return keycloakStorageId;
 	}
-	
+
 	@Override
 	public String getUsername() {
-		return openmrsUserModel.getUsername();
+		// Keycloak requires a username, and OpenMRS does not: the admin account has none. Falling back to
+		// the system id keeps that user identifiable rather than nameless, and it is the name they type.
+		return openmrsUserModel.getUsername() == null ? openmrsUserModel.getSystemId() : openmrsUserModel.getUsername();
 	}
-	
+
 	@Override
 	public void setUsername(String username) {
 		openmrsUserModel.setUsername(username);
 	}
-	
+
+	/**
+	 * A retired OpenMRS user is a disabled Keycloak user. AbstractUserAdapterFederatedStorage reads
+	 * this from an attribute in Keycloak's own federated storage and answers true when it is unset,
+	 * which it is for every OpenMRS user, so without this every retired user passed Keycloak's
+	 * enabledUser check.
+	 */
+	@Override
+	public boolean isEnabled() {
+		return !Boolean.TRUE.equals(openmrsUserModel.getRetired());
+	}
+
 	@Override
 	public String getEmail() {
 		return openmrsUserModel.getEmail();
 	}
-	
+
 	@Override
 	public void setEmail(String email) {
 		openmrsUserModel.setEmail(email);

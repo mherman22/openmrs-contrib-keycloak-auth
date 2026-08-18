@@ -9,29 +9,45 @@
  */
 package org.openmrs.contrib.keycloak.userstore.models;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.OneToOne;
-import javax.persistence.Table;
-
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
 import lombok.Data;
 
 @Entity
 @Table(name = "users")
 @Data
 public class OpenmrsUserModel {
-	
+
 	@Id
 	@Column(name = "user_id")
 	private Integer userId;
-	
+
 	@OneToOne
 	@JoinColumn(name = "person_id")
 	private PersonModel person;
-	
+
 	private String username;
-	
+
+	/**
+	 * OpenMRS's other identifier for a user, and for some users the only one. The admin account ships
+	 * with {@code username} NULL and {@code system_id} "admin", and any user created without a username
+	 * is stored the same way, so a lookup that matches only on username cannot find them.
+	 */
+	@Column(name = "system_id")
+	private String systemId;
+
 	private String email;
+
+	/**
+	 * How OpenMRS disables an account. Its own authenticate carries "and u.retired = false" in the
+	 * lookup, so a retired user cannot sign in to OpenMRS whatever password they type; nothing here
+	 * read the column, so retiring a user revoked their OpenMRS access and left their Keycloak access
+	 * untouched. Not null in the OpenMRS schema, but read as a Boolean so odd data cannot enable
+	 * anyone.
+	 */
+	private Boolean retired;
 }

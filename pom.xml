@@ -7,7 +7,6 @@
     <version>1.0.0-SNAPSHOT</version>
     <modules>
         <module>openmrs-keycloak-userstore</module>
-        <module>openmrs-keycloak-ear</module>
     </modules>
 
     <packaging>pom</packaging>
@@ -59,25 +58,45 @@
                 <scope>provided</scope>
             </dependency>
 
-            <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+            <!--
+                com.mysql:mysql-connector-j, not the mysql:mysql-connector-java that the OpenMRS
+                platform manages: that coordinate was relocated by MySQL and is frozen at 8.0.33.
+                The platform's version is irrelevant here in any case, since this provider runs inside
+                Keycloak's JVM and reads the OpenMRS database over JDBC, so nothing of OpenMRS is
+                on its classpath.
+
+                Pinned to the version the Keycloak we target already carries, in
+                /opt/keycloak/lib/lib/main, hence provided; compile against it, ship nothing. Move
+                this with keycloak.version, not on its own.
+
+                A deployment still has to put the driver in /opt/keycloak/providers beside this
+                jar. Quarkus does not expose lib/main to provider classloaders, so provided here
+                does not mean present at runtime.
+            -->
             <dependency>
-                <groupId>mysql</groupId>
-                <artifactId>mysql-connector-java</artifactId>
-                <version>8.0.19</version>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>9.6.0</version>
+                <scope>provided</scope>
             </dependency>
 
-            <!-- https://mvnrepository.com/artifact/org.hibernate.javax.persistence/hibernate-jpa-2.1-api -->
             <dependency>
-                <groupId>org.hibernate.javax.persistence</groupId>
-                <artifactId>hibernate-jpa-2.1-api</artifactId>
-                <version>1.0.0.Final</version>
+                <groupId>jakarta.persistence</groupId>
+                <artifactId>jakarta.persistence-api</artifactId>
+                <!-- Must match what Keycloak 26.7.1 ships, since the provider binds to the
+                     container's libraries rather than carrying its own. -->
+                <version>3.2.0</version>
+                <scope>provided</scope>
             </dependency>
 
             <!-- https://mvnrepository.com/artifact/org.hibernate/hibernate-core -->
             <dependency>
                 <groupId>org.hibernate</groupId>
                 <artifactId>hibernate-core</artifactId>
-                <version>5.4.14.Final</version>
+                <!-- Keycloak 26.7.1 runtime ships 7.2.14; compiling against anything else moves a
+                     breakage from build time to runtime. -->
+                <version>7.2.14.Final</version>
+                <scope>provided</scope>
             </dependency>
 
             <dependency>
@@ -96,7 +115,8 @@
             <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
-                <version>1.18.12</version>
+                <!-- 1.18.30 is the first release that runs on JDK 21 -->
+                <version>1.18.36</version>
                 <scope>provided</scope>
             </dependency>
 
@@ -104,21 +124,21 @@
             <dependency>
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
-                <version>4.13.1</version>
+                <version>4.13.2</version>
                 <scope>test</scope>
             </dependency>
 
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>
-                <version>1.4.200</version>
+                <version>2.3.232</version>
                 <scope>test</scope>
             </dependency>
 
             <dependency>
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
-                <version>3.2.4</version>
+                <version>5.14.2</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
@@ -128,31 +148,23 @@
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>org.wildfly.plugins</groupId>
-                    <artifactId>wildfly-maven-plugin</artifactId>
-                    <version>2.0.2.Final</version>
-                    <configuration>
-                        <skip>false</skip>
-                    </configuration>
-                </plugin>
-                <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.8.1</version>
+                    <version>3.13.0</version>
                     <configuration>
-                        <source>8</source>
-                        <target>8</target>
+                        <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.0.0-M4</version>
+                    <version>3.5.2</version>
                 </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
-                    <version>0.8.5</version>
+                    <!-- earlier versions cannot read Java 17 bytecode -->
+                    <version>0.8.12</version>
                     <executions>
                         <execution>
                             <goals>
@@ -229,7 +241,8 @@
                 <plugin>
                     <groupId>net.revelc.code</groupId>
                     <artifactId>impsort-maven-plugin</artifactId>
-                    <version>1.5.0</version>
+                    <!-- 1.5.0 bundles a javaparser with no JAVA_17 language level -->
+                    <version>1.12.0</version>
                     <configuration>
                         <groups>javax, java, *</groups>
                         <removeUnused>true</removeUnused>
@@ -245,7 +258,7 @@
                 <plugin>
                     <groupId>net.revelc.code.formatter</groupId>
                     <artifactId>formatter-maven-plugin</artifactId>
-                    <version>2.14.0</version>
+                    <version>2.24.1</version>
                     <configuration>
                         <lineEnding>LF</lineEnding>
                         <configFile>eclipse/OpenMRSFormatter.xml</configFile>
@@ -265,21 +278,14 @@
                         </execution>
                     </executions>
                 </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-ear-plugin</artifactId>
-                    <version>3.0.2</version>
-                    <configuration>
-                        <defaultLibBundleDir>APP-INF/lib</defaultLibBundleDir>
-                    </configuration>
-                </plugin>
             </plugins>
         </pluginManagement>
     </build>
 
     <properties>
-        <keycloak.version>13.0.0</keycloak.version>
-        <openmrsPlatformVersion>2.4.0</openmrsPlatformVersion>
+        <keycloak.version>26.7.1</keycloak.version>
+        <openmrsPlatformVersion>2.8.8</openmrsPlatformVersion>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.outputEncoding>UTF-8</project.build.outputEncoding>
     </properties>

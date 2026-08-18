@@ -8,10 +8,10 @@
     Copyright (C) OpenMRS Inc. OpenMRS is a registered trademark and the OpenMRS
     graphic logo is a trademark of OpenMRS Inc.
 -->
-<persistence version="2.1" xmlns="http://xmlns.jcp.org/xml/ns/persistence"
+<persistence version="3.0" xmlns="https://jakarta.ee/xml/ns/persistence"
              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-             xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/persistence
-                                 http://xmlns.jcp.org/xml/ns/persistence/persistence_2_1.xsd">
+             xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence
+                                 https://jakarta.ee/xml/ns/persistence/persistence_3_0.xsd">
     <persistence-unit name="openmrs-persistence-test" transaction-type="RESOURCE_LOCAL">
         <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
 
@@ -22,8 +22,8 @@
 
         <properties>
             <!-- Configuring JDBC properties -->
-            <property name="javax.persistence.jdbc.url" value="jdbc:h2:mem:test;INIT=RUNSCRIPT FROM 'classpath:create.sql';"/>
-            <property name="javax.persistence.jdbc.driver" value="org.h2.Driver"/>
+            <property name="jakarta.persistence.jdbc.url" value="jdbc:h2:mem:test;INIT=RUNSCRIPT FROM 'classpath:create.sql';"/>
+            <property name="jakarta.persistence.jdbc.driver" value="org.h2.Driver"/>
 
             <!-- Hibernate properties -->
             <property name="hibernate.dialect" value="org.hibernate.dialect.H2Dialect"/>
