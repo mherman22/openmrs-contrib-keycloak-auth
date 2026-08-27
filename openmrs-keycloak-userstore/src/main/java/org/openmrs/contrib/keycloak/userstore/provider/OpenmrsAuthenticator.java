@@ -130,7 +130,7 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		 * A name can be one user's username and another's system_id, and OpenMRS answers for whichever
 		 * it resolves, so a token would otherwise be minted for a user who never gave their password.
 		 */
-		// Trimmed: uuid is CHAR(38), which comes back padded to 38 under PAD_CHAR_TO_FULL_LENGTH.
+		// CHAR(38) comes back padded under PAD_CHAR_TO_FULL_LENGTH, so compare the trimmed value.
 		if (!authenticated.get().equals(resolved.getUuid().trim())) {
 			log.warn("Refusing the credential of OpenMRS user {}: OpenMRS authenticated a different user", userId);
 			return false;

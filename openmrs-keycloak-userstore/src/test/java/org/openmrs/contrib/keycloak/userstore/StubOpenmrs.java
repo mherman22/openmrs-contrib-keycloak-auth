@@ -126,9 +126,8 @@ public class StubOpenmrs {
 	}
 
 	/**
-	 * Answers with a user whose own uuid is somebody else's, while the person nested inside it carries
-	 * the uuid the caller is looking for. Anything that takes a uuid from the response without
-	 * insisting on the user's own reads the person's and authenticates the wrong user.
+	 * Answers with a user whose own uuid is somebody else's, while the nested person carries the uuid
+	 * the caller wants: anything not insisting on the user's own uuid authenticates the wrong user.
 	 */
 	public void authenticatesSomebodyElseButNestsThePerson(String otherUuid, String personUuid) {
 		this.authenticatedUuid = otherUuid;
