@@ -90,9 +90,9 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 
 	@Test
 	public void authenticatesWhenOpenmrsSaysSo() {
-		openmrs.authenticates("uuid-user-254");
+		openmrs.authenticates("uuid-user-200");
 
-		assertTrue(authenticates("odd-hash", "anything"));
+		assertTrue(authenticates("SidVaish", "whatever-openmrs-accepts"));
 	}
 
 	@Test

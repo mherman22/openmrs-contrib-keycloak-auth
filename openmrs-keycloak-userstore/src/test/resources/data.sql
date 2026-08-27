@@ -4,7 +4,6 @@
 INSERT INTO users (user_id, uuid, username) VALUES (152,'uuid-user-152','admin');
 INSERT INTO users (user_id, uuid, username) VALUES (186,'uuid-user-186','Sid');
 INSERT INTO users (user_id, uuid, username) VALUES (200,'uuid-user-200','SidVaish');
-INSERT INTO users (user_id, uuid, username) VALUES (254,'uuid-user-254','odd-hash');
 
 -- No username, identified by system_id: the shape OpenMRS uses for a user created without one, and
 -- the shape its own admin account ships in.
