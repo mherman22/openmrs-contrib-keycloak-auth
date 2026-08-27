@@ -48,11 +48,21 @@ public class StubOpenmrs {
 
 	private String redirectTo;
 
+	private final java.util.List<String> released = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
 	private String personUuid = "uuid-of-the-person-not-the-user";
 
 	public StubOpenmrs() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/openmrs/ws/rest/v1/session", exchange -> {
+			if ("DELETE".equals(exchange.getRequestMethod())) {
+				List<String> cookies = exchange.getRequestHeaders().get("Cookie");
+				released.add(cookies == null || cookies.isEmpty() ? "" : cookies.get(0));
+				exchange.sendResponseHeaders(204, -1);
+				exchange.close();
+				return;
+			}
+
 			calls++;
 			lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
 			List<String> cookies = exchange.getRequestHeaders().get("Cookie");
@@ -105,6 +115,11 @@ public class StubOpenmrs {
 
 	public String baseUrl() {
 		return "http://127.0.0.1:" + server.getAddress().getPort() + "/openmrs";
+	}
+
+	/** The JSESSIONID values handed back, one per released session. */
+	public java.util.List<String> released() {
+		return released;
 	}
 
 	public int calls() {

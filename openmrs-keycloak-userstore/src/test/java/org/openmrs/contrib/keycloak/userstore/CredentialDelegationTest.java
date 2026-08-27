@@ -247,6 +247,21 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 		assertTrue(authenticator.getUserByUsername(realm, "SidVaish").isEnabled());
 	}
 
+	@Test
+	public void handsTheOpenmrsSessionBackAfterEveryCheck() throws Exception {
+		openmrs.authenticates("uuid-user-200");
+		authenticates("SidVaish", "Sid123");
+		openmrs.refusesEverybody();
+		authenticates("SidVaish", "the-wrong-one");
+
+		for (int waited = 0; waited < 50 && openmrs.released().size() < 2; waited++) {
+			Thread.sleep(20);
+		}
+
+		assertThat("a refused check opens a session too, so both must come back", openmrs.released().size(), equalTo(2));
+		assertThat(openmrs.released().get(0), containsString("JSESSIONID=STUBSESSION"));
+	}
+
 	private boolean authenticates(String username, String password) {
 		UserModel user = authenticator.getUserByUsername(realm, username);
 		assertThat("the fixture must contain " + username, user, notNullValue());

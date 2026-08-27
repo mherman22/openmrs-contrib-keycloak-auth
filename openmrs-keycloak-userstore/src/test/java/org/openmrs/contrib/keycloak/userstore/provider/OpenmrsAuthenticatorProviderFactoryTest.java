@@ -9,10 +9,12 @@
  */
 package org.openmrs.contrib.keycloak.userstore.provider;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.fail;
 
 import org.junit.Test;
 import org.keycloak.component.ComponentModel;
@@ -59,9 +61,16 @@ public class OpenmrsAuthenticatorProviderFactoryTest {
 		assertThat(factory.sessionClientFor(componentWith(null)), notNullValue());
 	}
 
-	@Test(expected = ComponentValidationException.class)
+	@Test
 	public void refusesToSaveAComponentWhoseBaseUrlIsMalformed() {
-		factory.validateConfiguration(null, null, componentWith("gateway/openmrs"));
+		try {
+			factory.validateConfiguration(null, null, componentWith("gateway/openmrs"));
+			fail("a base URL that names no scheme cannot reach OpenMRS and must be refused at save");
+		}
+		catch (ComponentValidationException e) {
+			// The reason, not the type: null session and realm would raise this exception anyway.
+			assertThat(e.getMessage(), containsString("must begin with http://"));
+		}
 	}
 
 	@Test

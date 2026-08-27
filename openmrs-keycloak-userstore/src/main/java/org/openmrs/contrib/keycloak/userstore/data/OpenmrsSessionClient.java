@@ -127,6 +127,8 @@ public class OpenmrsSessionClient {
 			return Optional.empty();
 		}
 
+		releaseSession(response);
+
 		if (response.statusCode() != 200) {
 			log.warn("OpenMRS at {} answered {} when asked to check a credential", sessionUri, response.statusCode());
 			return Optional.empty();
@@ -157,5 +159,26 @@ public class OpenmrsSessionClient {
 		}
 
 		return Optional.of(uuid);
+	}
+
+	/**
+	 * Hands back the HTTP session OpenMRS opens for every check, including a refused one, which would
+	 * otherwise sit out the servlet timeout. Sent without waiting: the answer is already in hand, and a
+	 * login should not pay for the cleanup.
+	 */
+	private void releaseSession(HttpResponse<String> response) {
+		Optional<String> session = response.headers().allValues("set-cookie").stream()
+		        .filter(cookie -> cookie.startsWith("JSESSIONID=")).findFirst()
+		        .map(cookie -> cookie.substring(0, cookie.indexOf(';') < 0 ? cookie.length() : cookie.indexOf(';')));
+		if (!session.isPresent()) {
+			return;
+		}
+
+		HttpRequest request = HttpRequest.newBuilder(sessionUri).DELETE().timeout(Duration.ofSeconds(5))
+		        .header("Cookie", session.get()).build();
+		httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding()).exceptionally(e -> {
+			log.debug("Could not hand back an OpenMRS session at {}", sessionUri, e);
+			return null;
+		});
 	}
 }
