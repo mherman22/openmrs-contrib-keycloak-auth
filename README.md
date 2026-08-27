@@ -203,9 +203,10 @@ implementation here agreeing with it by hand.
 
 Two things about the answer are easy to get wrong, and both are load-bearing:
 
-- **It is always `200`.** A wrong password, an unknown user and no credentials at all all return
-  `200` with `{"authenticated":false}`. The status code says nothing; the `authenticated` field is
-  the only signal.
+- **A refusal comes back `200`.** A wrong password, an unknown user and no credentials at all each
+  return `200` with `{"authenticated":false}`, so a check that keys off the status code treats all
+  three as success. Read the `authenticated` field. A status other than `200` is something else
+  answering — a proxy, an error page — and is refused on its own account.
 - **`authenticated:true` is not enough.** A name can be one user's `username` and another's
   `system_id`, and OpenMRS answers for whichever it resolves — so the response's `user.uuid` must
   equal the uuid of the user Keycloak resolved. Otherwise a token gets minted for a user who never
