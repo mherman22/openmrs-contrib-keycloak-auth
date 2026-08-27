@@ -109,6 +109,10 @@ unrelated integration would turn this credential check into "accept every passwo
 Each validation also leaves OpenMRS holding a server-side session that is never reclaimed, including
 for failed guesses, until it idles out.
 
+The client is built once per provider factory and holds the base URL it was built with, as the
+`EntityManagerFactory` holds the JDBC settings. **Changing either in the admin console takes effect
+at the next Keycloak restart, not at the next login.**
+
 ## Connection pool sizing
 
 With `NO_CACHE`, a login is two queries against the OpenMRS database — the user lookup, and a
