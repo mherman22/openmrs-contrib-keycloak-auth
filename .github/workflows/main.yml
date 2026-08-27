@@ -9,11 +9,8 @@ on:
 
 jobs:
   build:
-    # Not build-backend-module.yml: that packages and checksums an omod, and this is a plain JAR.
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-maven.yml@main
     with:
-      # 17 is the bytecode target; 21 is what Keycloak 26 runs on.
       java_versions: '[17, 21]'
       main_java_version: '17'
-      # No distributionManagement in the pom, so there is nowhere to deploy a snapshot.
       deploy_snapshots: false
