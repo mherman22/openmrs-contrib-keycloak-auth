@@ -36,8 +36,7 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 
 	@Override
 	public String getUsername() {
-		// Keycloak requires a username, and OpenMRS does not: the admin account has none. Falling back to
-		// the system id keeps that user identifiable rather than nameless, and it is the name they type.
+		// Fall back to system_id: OpenMRS allows a user with no username, and Keycloak requires one.
 		return openmrsUserModel.getUsername() == null ? openmrsUserModel.getSystemId() : openmrsUserModel.getUsername();
 	}
 
@@ -47,10 +46,8 @@ public class UserAdapter extends AbstractUserAdapterFederatedStorage {
 	}
 
 	/**
-	 * A retired OpenMRS user is a disabled Keycloak user. AbstractUserAdapterFederatedStorage reads
-	 * this from an attribute in Keycloak's own federated storage and answers true when it is unset,
-	 * which it is for every OpenMRS user, so without this every retired user passed Keycloak's
-	 * enabledUser check.
+	 * A retired OpenMRS user is a disabled Keycloak user. Without this override,
+	 * AbstractUserAdapterFederatedStorage answers true from an attribute no OpenMRS user has set.
 	 */
 	@Override
 	public boolean isEnabled() {

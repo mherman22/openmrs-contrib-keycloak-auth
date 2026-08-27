@@ -68,13 +68,6 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		assertThat(result.getUsername(), equalTo("admin"));
 	}
 
-	/**
-	 * Keycloak's federation contract is that a lookup for a user who does not exist answers null. These
-	 * three used to wrap the lookup unconditionally, so a missing user became a UserAdapter around
-	 * nothing; and the query beneath them threw NoResultException, which Keycloak reported to the
-	 * browser as "Unexpected error when handling authentication request to identity provider". Every
-	 * mistyped username at the login form produced that page instead of "Invalid username or password".
-	 */
 	@Test
 	public void getUserByUsernameReturnsNullWhenThereIsNoSuchUser() {
 		when(userDao.getOpenmrsUserByUsername("nobody")).thenReturn(null);
@@ -96,10 +89,6 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		assertThat(openmrsAuthenticator.getUserById(realmModel, "f:00000000-0000-0000-0000-000000000000:404"), nullValue());
 	}
 
-	/**
-	 * A user with no credential row is a failed sign-in, not a server fault. The array was dereferenced
-	 * unconditionally, so this was a NullPointerException out of the credential check.
-	 */
 	@Test
 	public void aUserWithNoCredentialRowSimplyFailsToAuthenticate() {
 		when(userDao.getOpenmrsUserByUsername("admin")).thenReturn(openmrsUserModel);
@@ -110,13 +99,6 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		        org.keycloak.models.credential.PasswordCredentialModel.TYPE, "whatever")));
 	}
 
-	/**
-	 * Keycloak creates a provider per session and closes it when the session ends. This did nothing, so
-	 * every authentication leaked its EntityManager and the JDBC connection behind it. After a few
-	 * hundred logins the pool was exhausted and the server answered "the internal connection pool has
-	 * reached its maximum size" to everything, including its own admin console — which looks like
-	 * Keycloak failing rather than this provider.
-	 */
 	@Test
 	public void closingTheProviderReleasesItsEntityManager() {
 		openmrsAuthenticator.close();

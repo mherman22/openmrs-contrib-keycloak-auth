@@ -32,22 +32,14 @@ public class OpenmrsUserModel {
 
 	private String username;
 
-	/**
-	 * OpenMRS's other identifier for a user, and for some users the only one. The admin account ships
-	 * with {@code username} NULL and {@code system_id} "admin", and any user created without a username
-	 * is stored the same way, so a lookup that matches only on username cannot find them.
-	 */
 	@Column(name = "system_id")
 	private String systemId;
 
 	private String email;
 
 	/**
-	 * How OpenMRS disables an account. Its own authenticate carries "and u.retired = false" in the
-	 * lookup, so a retired user cannot sign in to OpenMRS whatever password they type; nothing here
-	 * read the column, so retiring a user revoked their OpenMRS access and left their Keycloak access
-	 * untouched. Not null in the OpenMRS schema, but read as a Boolean so odd data cannot enable
-	 * anyone.
+	 * Boolean rather than boolean: the column is nullable, and a primitive would read NULL as not
+	 * retired.
 	 */
 	private Boolean retired;
 }

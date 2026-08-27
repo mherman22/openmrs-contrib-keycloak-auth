@@ -36,15 +36,6 @@ public class UserDao {
 		this.em = em;
 	}
 
-	/**
-	 * Releases the EntityManager, and with it the JDBC connection behind it.
-	 * <p>
-	 * Keycloak creates a provider per session and closes it when the session ends. This was never
-	 * called, so every authentication leaked a connection: Hibernate's built-in pool holds twenty, and
-	 * a server that had served a few hundred logins began answering "The internal connection pool has
-	 * reached its maximum size" to every request — including the admin console, which made it look like
-	 * Keycloak itself had failed rather than this provider.
-	 */
 	public void close() {
 		if (em != null && em.isOpen()) {
 			em.close();
@@ -52,17 +43,13 @@ public class UserDao {
 	}
 
 	/**
+	 * Answers null rather than throwing: Keycloak's federation contract treats a lookup for a missing
+	 * user as null, and getSingleResult would throw NoResultException instead.
+	 *
 	 * @return the user, or null if there is no such user.
-	 *         <p>
-	 *         Null, not an exception. Keycloak's federation contract is that a lookup for a user who
-	 *         does not exist answers null; getSingleResult throws NoResultException instead, which
-	 *         Keycloak reports to the browser as "Unexpected error when handling authentication request
-	 *         to identity provider". Every mistyped username at the login form produced that page.
 	 */
 	public OpenmrsUserModel getOpenmrsUserByUsername(String username) {
-		// Username or system_id, which is what OpenMRS's own getUserByUsername matches. Matching only on
-		// username left the admin account, and any user created without one, unable to authenticate at
-		// all: those rows carry the name in system_id and NULL in username.
+		// Matches system_id too: OpenMRS identifies a user with no username by it.
 		TypedQuery<OpenmrsUserModel> query = em.createQuery(
 		    "select u from OpenmrsUserModel u where u.username = :identifier or u.systemId = :identifier",
 		    OpenmrsUserModel.class);
@@ -87,51 +74,28 @@ public class UserDao {
 	}
 
 	/**
-	 * @return the password and salt on record, or null if there is no such user.
-	 *         <p>
-	 *         Keyed by user_id: the identity the lookup already resolved, and the same key OpenMRS uses
-	 *         at this point in its own authenticate. Matching the name again ran a second query over
-	 *         the same "username or system_id" predicate, unordered and in native SQL rather than JPQL,
-	 *         so it was not guaranteed to answer with the row the identity had come from. OpenMRS
-	 *         rejects a username that collides with another user's system_id when a user is saved, but
-	 *         nothing in the database enforces that.
-	 *         <p>
-	 *         Retired users have no credential here, the same answer OpenMRS's own authenticate gives
-	 *         by carrying "and u.retired = false" in its lookup. UserAdapter reports them as disabled
-	 *         as well; this is the gate that holds if some flow reaches the credential check anyway.
+	 * Keyed by user_id rather than by name: one user's username can be another's system_id, so matching
+	 * the name a second time can answer with the other user's credential.
+	 *
+	 * @return the password and salt on record, or null if there is no such user or they are retired.
 	 */
 	public String[] getUserPasswordAndSaltOnRecord(Integer userId) {
 		Query query = em
 		        .createNativeQuery("select password, salt from users u where u.user_id = :userId and u.retired = false");
 		query.setParameter("userId", userId);
 
-		// Null rather than an exception, for the same reason as above: a user with no row here is a
-		// failed credential, not a server fault.
 		Object row = query.getResultStream().findFirst().orElse(null);
 		if (row == null) {
 			return null;
 		}
 
-		// Either column may be null, for a user who has never had a password set. Mapping the row
-		// through Object::toString threw a NullPointerException out of the credential check, and
-		// because isValid catches only PersistenceException it reached the browser as
-		// "Unexpected error when handling authentication request" rather than a failed sign-in.
+		// Null elements, not a null array: both columns are null for a user with no password set.
 		Object[] columns = (Object[]) row;
 		return new String[] { asString(columns[0]), asString(columns[1]) };
 	}
 
 	/**
 	 * @return whether OpenMRS has this account locked out at this moment.
-	 *         <p>
-	 *         OpenMRS counts failed sign-ins in the loginAttempts user property and, past
-	 *         security.allowedFailedLoginsBeforeLockout attempts (7 by default), stamps
-	 *         lockoutTimestamp and refuses the user for security.unlockAccountWaitingTime minutes (5 by
-	 *         default). Signing in through Keycloak consulted none of that, so an account OpenMRS had
-	 *         locked went on authenticating here.
-	 *         <p>
-	 *         Read only. This provider does not write to OpenMRS, so a failure at the Keycloak login
-	 *         form still does not count towards that threshold: Keycloak's own brute force detection is
-	 *         what has to stop guessing at this door, and it is off until the realm turns it on.
 	 */
 	public boolean isLockedOutInOpenmrs(Integer userId) {
 		String lockedAt = userProperty(userId, "lockoutTimestamp");
@@ -144,7 +108,7 @@ public class UserDao {
 			lockedAtMs = Long.parseLong(lockedAt.trim());
 		}
 		catch (NumberFormatException e) {
-			// What OpenMRS does with an unreadable value: say so, and let the user try.
+			// Fail open as OpenMRS does: an unreadable timestamp must not lock the account.
 			log.warn("Bad value stored in the lockoutTimestamp user property of OpenMRS user {}: '{}'", userId, lockedAt);
 			return false;
 		}
@@ -152,7 +116,6 @@ public class UserDao {
 		return System.currentTimeMillis() - lockedAtMs <= unlockWaitMs();
 	}
 
-	/** How long OpenMRS keeps an account locked, from the same global property OpenMRS reads. */
 	private long unlockWaitMs() {
 		String waitingTime = globalProperty("security.unlockAccountWaitingTime");
 		if (waitingTime != null && !waitingTime.isBlank()) {
@@ -197,9 +160,7 @@ public class UserDao {
 			return null;
 		}
 
-		// OpenMRS declares the property columns as CLOB, and a driver may hand one back as a
-		// java.sql.Clob rather than a String -- H2 does. Its toString is a handle ("clob2: '...'"),
-		// not the value, so reading it that way silently produced nonsense rather than a timestamp.
+		// A CLOB column can arrive as a java.sql.Clob, whose toString is a handle, not the value.
 		if (column instanceof Clob) {
 			Clob clob = (Clob) column;
 			try {
@@ -225,10 +186,7 @@ public class UserDao {
 	}
 
 	public List<OpenmrsUserModel> searchForOpenmrsUserQuery(Map<String, String> map, int firstResult, int maxResult) {
-		// Every clause is "this criterion was not given, or it matches", combined with and. They used to
-		// be combined with or, which made the query true for every user as soon as any one criterion was
-		// absent: a search by username alone returned the whole table, and which user came back first
-		// depended on nothing more than user_id order.
+		// Combined with and: with or, an absent criterion makes the whole query true for every user.
 		return em
 		        .createQuery("select u from OpenmrsUserModel u left outer join u.person.names n "
 		                + "where (:username is null or lower(u.username) like lower(:username)) and "

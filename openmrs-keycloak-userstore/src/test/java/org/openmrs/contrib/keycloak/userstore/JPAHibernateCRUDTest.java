@@ -52,7 +52,6 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(result[1], equalTo("123"));
 	}
 
-	/** A user who has never had a password set. Both columns are null, and reading them threw. */
 	@Test
 	public void readsAUserThatHasNoPasswordWithoutThrowing() {
 		String[] result = userDao.getUserPasswordAndSaltOnRecord(152);
@@ -62,16 +61,14 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(result[1], nullValue());
 	}
 
-	/** A retired user has no credential to read, as in OpenMRS's own authenticate. */
 	@Test
 	public void answersNullForTheCredentialOfARetiredUser() {
 		assertThat(userDao.getUserPasswordAndSaltOnRecord(252), nullValue());
 	}
 
 	/**
-	 * A retired user is still found. They are refused at the credential check and reported to Keycloak
-	 * as disabled, rather than made invisible: an administrator has to be able to see the account they
-	 * retired in the Keycloak console and in a user search.
+	 * A retired user is still found, so an administrator can see the account they retired in the
+	 * Keycloak console and in a user search. They are refused at the credential check instead.
 	 */
 	@Test
 	public void stillFindsARetiredUser() {
@@ -81,16 +78,14 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(retired.getRetired(), equalTo(true));
 	}
 
-	/** A user id nobody has. */
 	@Test
 	public void answersNullForTheCredentialOfAUserThatDoesNotExist() {
 		assertThat(userDao.getUserPasswordAndSaltOnRecord(4040), nullValue());
 	}
 
 	/**
-	 * User 400's username is user 401's system_id. The credential must be the one belonging to the user
-	 * that was asked for: this used to match the name a second time, in a separate unordered query, and
-	 * either row could have answered.
+	 * User 400's username is user 401's system_id. The credential read has to belong to the user that
+	 * was asked for.
 	 */
 	@Test
 	public void readsTheCredentialOfTheUserItIsAskedFor() {
@@ -110,12 +105,6 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(query.get(0).getUserId(), equalTo(152));
 	}
 
-	/**
-	 * OpenMRS stores its admin account with no username, identified by system_id, and any user created
-	 * without a username the same way. Matching only on username left every such user unable to
-	 * authenticate through Keycloak, whatever password they typed. OpenMRS's own getUserByUsername
-	 * matches either column, which is why signing in to OpenMRS directly always worked for them.
-	 */
 	@Test
 	public void findsAUserThatHasOnlyASystemId() {
 		OpenmrsUserModel user = userDao.getOpenmrsUserByUsername("99-1");
@@ -136,18 +125,11 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(result[1], equalTo("999"));
 	}
 
-	/** A name that matches neither column is simply absent, rather than an exception. */
 	@Test
 	public void answersNullForAUserThatDoesNotExist() {
 		assertThat(userDao.getOpenmrsUserByUsername("nobody-at-all"), nullValue());
 	}
 
-	/**
-	 * A search for one user must not answer with another. The criteria used to be combined with or, so
-	 * every clause for a criterion that was not supplied made the whole query true and the search
-	 * returned the entire table; the original assertion passed only because the user it wanted happened
-	 * to have the lowest id.
-	 */
 	@Test
 	public void searchDoesNotReturnUsersThatDoNotMatch() {
 		List<OpenmrsUserModel> found = userDao

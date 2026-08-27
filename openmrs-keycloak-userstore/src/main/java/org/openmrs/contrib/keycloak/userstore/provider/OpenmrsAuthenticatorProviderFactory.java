@@ -150,23 +150,14 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 		private static final Properties SETTINGS = new Properties();
 
 		static {
-			// No dialect is set on purpose. Hibernate 6 removed the versioned MySQL dialects and
-			// detects the dialect from the JDBC metadata, which is what we want here: OpenMRS is
-			// deployed against both MySQL and MariaDB, and naming one would be wrong for the other.
+			// No dialect on purpose: OpenMRS runs on both MySQL and MariaDB, and Hibernate 6 detects it.
 			SETTINGS.setProperty(AvailableSettings.HBM2DDL_AUTO, Action.VALIDATE.name().toLowerCase());
 			SETTINGS.setProperty(AvailableSettings.SHOW_SQL, Boolean.FALSE.toString());
-			// Hibernate's built-in pool, which it says plainly is not for production use. It is stated
-			// here rather than left at the default so the ceiling is visible: when providers leaked
-			// connections, this is the number that ran out, and the server then answered
-			// "internal connection pool has reached its maximum size" to every request.
 			SETTINGS.setProperty(AvailableSettings.POOL_SIZE, "20");
-			// USE_REFLECTION_OPTIMIZER is gone in Hibernate 6, which changed how bytecode
-			// enhancement works. It was only a performance hint.
 		}
 
 		@Override
 		public String getScopeAnnotationName() {
-			// CDI scoping does not apply: this persistence unit is built in code, not discovered.
 			return null;
 		}
 

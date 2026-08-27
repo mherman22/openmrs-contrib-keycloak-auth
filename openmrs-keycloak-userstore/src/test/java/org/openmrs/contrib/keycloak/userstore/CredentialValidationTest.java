@@ -34,11 +34,6 @@ import org.mockito.junit.MockitoJUnitRunner;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
 import org.openmrs.contrib.keycloak.userstore.provider.OpenmrsAuthenticator;
 
-/**
- * The credential path end to end -- real users, real hashes, real queries -- because that is what
- * decides who gets into every application behind this realm. Weighted towards what must not
- * authenticate: the tests that matter are the ones that would let someone in.
- */
 @RunWith(MockitoJUnitRunner.class)
 public class CredentialValidationTest extends JPAHibernateTest {
 
@@ -68,8 +63,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		return new UserCredentialModel(null, PasswordCredentialModel.TYPE, password);
 	}
 
-	// What must authenticate.
-
 	@Test
 	public void authenticatesAgainstTheSha512HashOpenmrsWritesToday() {
 		assertTrue(authenticates("SidVaish", "Sid123"));
@@ -77,27 +70,22 @@ public class CredentialValidationTest extends JPAHibernateTest {
 
 	/**
 	 * OpenMRS's Security.hashMatches still accepts SHA-1, so a database upgraded from an older OpenMRS
-	 * holds users whose password is a SHA-1 hash and who sign in to OpenMRS every day. Checking only
-	 * SHA-512 locked all of them out of Keycloak, and told them their password was wrong.
+	 * holds users who sign in with a SHA-1 password every day.
 	 */
 	@Test
 	public void authenticatesAgainstALegacySha1Hash() {
 		assertTrue(authenticates("legacy-sha1", "Legacy1"));
 	}
 
-	/** And the same digest as written by the hex routine that dropped leading zeros. */
 	@Test
 	public void authenticatesAgainstAHashTheHistoricHexRoutineWrote() {
 		assertTrue(authenticates("legacy-oldhex", "Ancient1"));
 	}
 
-	/** OpenMRS stores its admin account with no username at all. */
 	@Test
 	public void authenticatesTheUserOpenmrsIdentifiesBySystemId() {
 		assertTrue(authenticates("99-1", "Sys123"));
 	}
-
-	// What must not.
 
 	@Test
 	public void refusesTheWrongPassword() {
@@ -120,7 +108,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertFalse(authenticates("SidVaish", ""));
 	}
 
-	/** A password with no salt: OpenMRS never writes one, and cannot authenticate one either. */
 	@Test
 	public void refusesAUserWhosePasswordHasNoSalt() {
 		assertFalse(authenticates("no-salt", "Sid123"));
@@ -131,14 +118,12 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertFalse(authenticates("99-1", "Sys124"));
 	}
 
-	/** The stored hash is not a password, however much it looks like one to whoever read the column. */
 	@Test
 	public void refusesTheStoredHashOfferedAsThePassword() {
 		assertFalse(authenticates("SidVaish",
 		    "0dd4de366d0ee9c2cad07be099cdb954d8f60f8eedd4a968fa624e51bc8022ebb85e914bf39846a5dcbc9d89fd8b86a7143a1698136df05cf1ce3dc595df0321"));
 	}
 
-	/** Only passwords are checked here. Anything else is not this provider's to answer. */
 	@Test
 	public void refusesACredentialThatIsNotAPassword() {
 		UserModel user = authenticator.getUserByUsername(realm, "SidVaish");
@@ -146,10 +131,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertFalse(authenticator.isValid(realm, user, new UserCredentialModel(null, OTPCredentialModel.TYPE, "Sid123")));
 	}
 
-	/**
-	 * A Keycloak id that does not carry an OpenMRS user_id. Nothing should be read for it, and nothing
-	 * should throw either.
-	 */
 	@Test
 	public void refusesAnIdThatDoesNotIdentifyAnOpenmrsUser() {
 		UserModel notOurs = mock(UserModel.class);
@@ -163,41 +144,23 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertThat(authenticator.getUserByUsername(realm, "nobody-at-all"), nullValue());
 	}
 
-	/**
-	 * A user who has never had a password set: both columns are null. This was a NullPointerException
-	 * out of the credential check, which Keycloak reported to the browser as a server error rather than
-	 * as a failed sign-in.
-	 */
 	@Test
 	public void refusesAUserWhoHasNoPasswordOnRecord() {
 		assertFalse(authenticates("admin", "anything"));
 		assertFalse(authenticates("admin", ""));
 	}
 
-	/**
-	 * The password is right. The user has been retired in OpenMRS, which is what an administrator does
-	 * when someone leaves, and OpenMRS's own authenticate will not look at a retired user at all. This
-	 * provider read nothing of the sort, so retiring a user revoked their OpenMRS access and left them
-	 * signing in to every application behind this realm.
-	 */
 	@Test
 	public void refusesARetiredUserWithTheRightPassword() {
 		assertFalse(authenticates("retired-nurse", "Retired1"));
 	}
 
-	/** And Keycloak is told, so its own checks and its admin console agree. */
 	@Test
 	public void reportsARetiredUserAsDisabled() {
 		assertFalse(authenticator.getUserByUsername(realm, "retired-nurse").isEnabled());
 		assertTrue(authenticator.getUserByUsername(realm, "SidVaish").isEnabled());
 	}
 
-	/**
-	 * OpenMRS locks an account after seven failed sign-ins and keeps it locked for
-	 * security.unlockAccountWaitingTime minutes. Keycloak read none of that, so an account OpenMRS had
-	 * locked went on authenticating here with the right password -- and, since this provider does not
-	 * write to OpenMRS, failures at the Keycloak form never counted towards that lock either.
-	 */
 	@Test
 	public void refusesTheRightPasswordWhileOpenmrsHasTheAccountLockedOut() {
 		lockedOutAt(System.currentTimeMillis());
@@ -205,7 +168,7 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertFalse(authenticates("locked-out", "Locked1"));
 	}
 
-	/** The waiting time comes from OpenMRS's own global property: ten minutes in this fixture. */
+	/** The waiting time is OpenMRS's own global property, set to ten minutes in this fixture. */
 	@Test
 	public void keepsTheAccountLockedForAsLongAsOpenmrsWould() {
 		lockedOutAt(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(6));
@@ -220,7 +183,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertTrue(authenticates("locked-out", "Locked1"));
 	}
 
-	/** How OpenMRS records an account that is not locked. */
 	@Test
 	public void treatsAZeroTimestampAsNotLockedOut() {
 		lockedOut("0");
@@ -228,7 +190,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertTrue(authenticates("locked-out", "Locked1"));
 	}
 
-	/** An unreadable timestamp must not lock everyone out, which is also what OpenMRS does with one. */
 	@Test
 	public void treatsAnUnreadableTimestampAsNotLockedOut() {
 		lockedOut("not a timestamp");
@@ -236,7 +197,6 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		assertTrue(authenticates("locked-out", "Locked1"));
 	}
 
-	/** With no global property set, OpenMRS's own default of five minutes applies. */
 	@Test
 	public void fallsBackToTheOpenmrsDefaultWaitingTime() {
 		lockedOutAt(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(6));
@@ -272,17 +232,14 @@ public class CredentialValidationTest extends JPAHibernateTest {
 		em.clear();
 	}
 
-	/** Nothing OpenMRS wrote, so nothing can match it. */
 	@Test
 	public void refusesAPasswordHashInAFormatNoOpenmrsVersionWrites() {
 		assertFalse(authenticates("odd-hash", "anything"));
 	}
 
 	/**
-	 * User 400's username is user 401's system_id. Whichever of them the lookup resolves, the password
-	 * checked has to be that user's own: the credential used to be fetched by matching the name again,
-	 * in a separate unordered query, so the other user's password could have been the one that let this
-	 * session in.
+	 * User 400's username is user 401's system_id. Whichever the lookup resolves, the password checked
+	 * has to be that user's own.
 	 */
 	@Test
 	public void checksTheCredentialOfTheUserThatWasResolved() {
