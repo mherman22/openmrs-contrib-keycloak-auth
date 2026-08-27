@@ -149,15 +149,15 @@ public class StubOpenmrs {
 		this.refusedUuid = uuid;
 	}
 
-	/**
-	 * A status other than 200, with the body left intact: a proxy or an error page can carry something
-	 * that parses, and the status is what says it did not come from OpenMRS.
-	 */
 	/** Sends the caller somewhere else, as a proxy or a login page would. */
 	public void redirectsTo(String location) {
 		this.redirectTo = location;
 	}
 
+	/**
+	 * A status other than 200, with the body left intact: a proxy or an error page can carry something
+	 * that parses, and the status is what says it did not come from OpenMRS.
+	 */
 	public void answersStatus(int status) {
 		this.status = status;
 	}

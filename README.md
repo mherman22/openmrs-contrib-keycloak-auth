@@ -150,9 +150,8 @@ number here.
 transaction on the first statement and holds the physical connection until the `EntityManager`
 closes, which happens after the credential check returns. So the pool below is a ceiling on
 concurrent logins *including the time OpenMRS takes to answer*, not just on concurrent queries: a
-slow OpenMRS occupies a connection per login for as long as it takes to reply. The connect and
-request timeouts are 5 seconds each and the JDK applies them independently, so the worst case is
-their sum.
+slow OpenMRS occupies a connection per login for as long as it takes to reply. The request timeout
+bounds the whole call, connect included, so that is at most 5 seconds.
 
 The database reads run through one `EntityManagerFactory` per provider factory, using **Hibernate's built-in
 connection pool, capped at 20** (`PersistenceUnitInfoImpl`). Two consequences:
