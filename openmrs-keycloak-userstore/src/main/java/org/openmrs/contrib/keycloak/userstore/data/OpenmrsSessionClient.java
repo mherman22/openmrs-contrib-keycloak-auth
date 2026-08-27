@@ -162,9 +162,8 @@ public class OpenmrsSessionClient {
 	}
 
 	/**
-	 * Hands back the HTTP session OpenMRS opens for every check, including a refused one, which would
-	 * otherwise sit out the servlet timeout. Sent without waiting: the answer is already in hand, and a
-	 * login should not pay for the cleanup.
+	 * Hands back the HTTP session OpenMRS opens for every check, refused ones included, rather than
+	 * leaving it to time out. Sent without waiting: a login should not pay for the cleanup.
 	 */
 	private void releaseSession(HttpResponse<String> response) {
 		Optional<String> session = response.headers().allValues("set-cookie").stream()
