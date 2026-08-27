@@ -42,6 +42,9 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 	private UserDao userDao;
 
 	@Mock
+	private OpenmrsSessionClient sessionClient;
+
+	@Mock
 	private RealmModel realmModel;
 
 	private OpenmrsUserModel openmrsUserModel;
@@ -50,8 +53,7 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 
 	@Before
 	public void setup() {
-		openmrsAuthenticator = new OpenmrsAuthenticator(session, model, userDao,
-		        new OpenmrsSessionClient("http://127.0.0.1:1"));
+		openmrsAuthenticator = new OpenmrsAuthenticator(session, model, userDao, sessionClient);
 
 		openmrsUserModel = new OpenmrsUserModel();
 		openmrsUserModel.setUserId(152);

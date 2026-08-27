@@ -112,13 +112,16 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			return false;
 		}
 
-		// Trimmed below: uuid is CHAR in OpenMRS, and a CHAR comes back blank-padded on some engines.
 		if (resolved == null || resolved.getUuid() == null) {
 			return false;
 		}
 
-		Optional<String> authenticated = sessionClient.authenticate(userModel.getUsername(),
-		    credentialInput.getChallengeResponse());
+		/*
+		 * The name from the same row the uuid came from, so both halves of the check describe one
+		 * user. OpenMRS identifies a user with no username by its system_id.
+		 */
+		String identifier = resolved.getUsername() == null ? resolved.getSystemId() : resolved.getUsername();
+		Optional<String> authenticated = sessionClient.authenticate(identifier, credentialInput.getChallengeResponse());
 		if (!authenticated.isPresent()) {
 			return false;
 		}
@@ -127,6 +130,7 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		 * A name can be one user's username and another's system_id, and OpenMRS answers for whichever
 		 * it resolves, so a token would otherwise be minted for a user who never gave their password.
 		 */
+		// Trimmed: uuid is CHAR(38), which comes back padded to 38 under PAD_CHAR_TO_FULL_LENGTH.
 		if (!authenticated.get().equals(resolved.getUuid().trim())) {
 			log.warn("Refusing the credential of OpenMRS user {}: OpenMRS authenticated a different user", userId);
 			return false;

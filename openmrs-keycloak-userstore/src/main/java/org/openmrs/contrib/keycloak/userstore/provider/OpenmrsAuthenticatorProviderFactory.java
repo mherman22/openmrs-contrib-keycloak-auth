@@ -16,6 +16,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import com.google.common.collect.ImmutableMap;
 import com.mysql.cj.jdbc.Driver;
@@ -71,10 +73,9 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 					.add()
 				.property()
 					.name(OPENMRS_BASE_URL)
-					.defaultValue("http://localhost:8080/openmrs")
-					.helpText("The base URL of the OpenMRS instance whose users these are. Credentials are "
-					        + "checked by asking it, so that OpenMRS's own authentication scheme decides them. "
-					        + "Use https in production: passwords are sent to it.")
+					.helpText("The base URL of the OpenMRS instance whose users these are, as Keycloak itself can "
+					        + "reach it -- in a container that is the service name, not localhost. Credentials "
+					        + "are checked by asking it. Use https in production: passwords are sent to it.")
 					.type(ProviderConfigProperty.STRING_TYPE)
 					.add()
 				.property()
@@ -91,10 +92,11 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 	private volatile EntityManagerFactory emf;
 
 	/*
-	 * One per factory, not one per session: a java.net.http.HttpClient owns a selector thread and an
-	 * executor, and create() runs on every authentication.
+	 * Keyed by base URL: a java.net.http.HttpClient owns a selector thread and an executor, so one
+	 * per session is too many — and this factory is a singleton across realms, so one for the whole
+	 * factory would send a second realm's passwords to the first realm's OpenMRS.
 	 */
-	private volatile OpenmrsSessionClient sessionClient;
+	private final ConcurrentMap<String, OpenmrsSessionClient> sessionClients = new ConcurrentHashMap<>();
 
 	@Override
 	public OpenmrsAuthenticator create(KeycloakSession keycloakSession, ComponentModel config) {
@@ -102,19 +104,13 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 			ensureEntityManagerFactory(config);
 		}
 
-		if (sessionClient == null) {
-			ensureSessionClient(config);
-		}
-
-		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()), sessionClient);
+		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()),
+		        sessionClientFor(config));
 	}
 
-	private void ensureSessionClient(ComponentModel config) {
-		synchronized (this) {
-			if (sessionClient == null) {
-				sessionClient = new OpenmrsSessionClient(config.get(OPENMRS_BASE_URL));
-			}
-		}
+	private OpenmrsSessionClient sessionClientFor(ComponentModel config) {
+		String baseUrl = config.get(OPENMRS_BASE_URL);
+		return sessionClients.computeIfAbsent(baseUrl == null ? "" : baseUrl, OpenmrsSessionClient::new);
 	}
 
 	@Override
@@ -137,13 +133,20 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 	@Override
 	public void validateConfiguration(KeycloakSession session, RealmModel realm, ComponentModel config)
 	        throws ComponentValidationException {
+		String baseUrl = config.get(OPENMRS_BASE_URL);
+		String problem = OpenmrsSessionClient.problemWith(baseUrl);
+		/*
+		 * Only a base URL that is present and wrong is rejected. Realm import calls this too, and a
+		 * realm written before this provider asked OpenMRS to check passwords carries no such key --
+		 * refusing it there stops Keycloak booting at all, admin console included.
+		 */
+		if (problem != null && baseUrl != null && !baseUrl.trim().isEmpty()) {
+			throw new ComponentValidationException(problem);
+		}
+
 		try {
-			ensureSessionClient(config);
 			ensureEntityManagerFactory(config);
 			emf.createEntityManager().close();
-		}
-		catch (IllegalArgumentException e) {
-			throw new ComponentValidationException(e.getMessage(), e);
 		}
 		catch (PersistenceException e) {
 			throw new ComponentValidationException(

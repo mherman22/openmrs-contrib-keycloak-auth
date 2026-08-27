@@ -24,8 +24,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Asks OpenMRS whether a password is right, so that OpenMRS's own authentication scheme decides it
- * rather than this provider comparing hashes itself.
+ * Asks OpenMRS whether a password is right, so that the authentication scheme the deployment has
+ * configured decides it.
  */
 public class OpenmrsSessionClient {
 
@@ -35,42 +35,72 @@ public class OpenmrsSessionClient {
 
 	private final URI sessionUri;
 
+	private final String problem;
+
 	private final HttpClient httpClient;
 
 	public OpenmrsSessionClient(String baseUrl) {
-		if (baseUrl == null || baseUrl.trim().isEmpty()) {
-			throw new IllegalArgumentException(
-			        "No OpenMRS base URL is configured, so no credential can be checked. A realm imported "
-			                + "before this provider asked OpenMRS to check passwords will not carry one.");
-		}
-
-		this.sessionUri = URI.create(baseUrl.trim().replaceAll("/+$", "") + "/ws/rest/v1/session");
+		this.problem = problemWith(baseUrl);
+		this.sessionUri = problem == null ? URI.create(baseUrl.trim().replaceAll("/+$", "") + "/ws/rest/v1/session") : null;
 		/*
-		 * No cookie handler, and java.net.http does not fall back to CookieHandler.getDefault(). A
-		 * JSESSIONID from an earlier call makes OpenMRS answer authenticated:true to any password at
-		 * all, so a client that kept one would accept every password.
+		 * No cookie handler, and java.net.http does not consult CookieHandler.getDefault(). OpenMRS
+		 * answers authenticated:true to any request carrying a JSESSIONID it already signed in, so a
+		 * client that kept one would accept every password.
 		 */
-		this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
+		this.httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(5))
 		        .followRedirects(HttpClient.Redirect.NEVER).build();
 	}
 
 	/**
+	 * @return why this base URL cannot be used to reach OpenMRS, or null if it can. A caller saving
+	 *         configuration can report it; the constructor accepts it either way, so that a realm
+	 *         imported without one still starts.
+	 */
+	public static String problemWith(String baseUrl) {
+		if (baseUrl == null || baseUrl.trim().isEmpty()) {
+			return "No OpenMRS base URL is configured, so no credential can be checked.";
+		}
+
+		URI uri;
+		try {
+			uri = URI.create(baseUrl.trim());
+		}
+		catch (IllegalArgumentException e) {
+			return "The OpenMRS base URL is not a URL: '" + baseUrl + "'";
+		}
+
+		if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) {
+			return "The OpenMRS base URL must begin with http:// or https://, but is '" + baseUrl + "'";
+		}
+
+		if (uri.getHost() == null) {
+			return "The OpenMRS base URL names no host: '" + baseUrl + "'";
+		}
+
+		return null;
+	}
+
+	/**
 	 * @return the uuid of the user OpenMRS authenticated, or empty if it authenticated nobody. The
-	 *         caller must check that uuid against the user it resolved: a name can match one user's
+	 *         caller must check that uuid against the user it resolved: a name can be one user's
 	 *         username and another's system_id, and OpenMRS answers for whichever it resolves.
 	 */
 	public Optional<String> authenticate(String identifier, String password) {
+		if (problem != null) {
+			log.error("Cannot check the credential of '{}': {}", identifier, problem);
+			return Optional.empty();
+		}
+
 		if (identifier == null || identifier.isEmpty() || password == null || password.isEmpty()) {
 			return Optional.empty();
 		}
 
-		String credentials = Base64.getEncoder()
-		        .encodeToString((identifier + ":" + password).getBytes(StandardCharsets.UTF_8));
-		HttpRequest request = HttpRequest.newBuilder(sessionUri).GET().timeout(Duration.ofSeconds(15))
-		        .header("Authorization", "Basic " + credentials).header("Accept", "application/json").build();
-
 		HttpResponse<String> response;
 		try {
+			String credentials = Base64.getEncoder()
+			        .encodeToString((identifier + ":" + password).getBytes(StandardCharsets.UTF_8));
+			HttpRequest request = HttpRequest.newBuilder(sessionUri).GET().timeout(Duration.ofSeconds(5))
+			        .header("Authorization", "Basic " + credentials).header("Accept", "application/json").build();
 			response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		}
 		catch (InterruptedException e) {
@@ -84,14 +114,10 @@ public class OpenmrsSessionClient {
 		}
 
 		if (response.statusCode() != 200) {
-			log.warn("OpenMRS answered {} when asked to check a credential", response.statusCode());
+			log.warn("OpenMRS at {} answered {} when asked to check a credential", sessionUri, response.statusCode());
 			return Optional.empty();
 		}
 
-		/*
-		 * OpenMRS answers 200 with authenticated:false for a wrong password and for a user that does
-		 * not exist, so the status code says nothing about whether anyone signed in.
-		 */
 		JsonNode body;
 		try {
 			body = JSON.readTree(response.body());
@@ -101,14 +127,15 @@ public class OpenmrsSessionClient {
 			return Optional.empty();
 		}
 
+		/*
+		 * OpenMRS answers 200 with authenticated:false for a wrong password and for a user that does
+		 * not exist, so the status says nothing about whether anyone signed in.
+		 */
 		if (!body.path("authenticated").asBoolean(false)) {
 			return Optional.empty();
 		}
 
-		/*
-		 * The user's own uuid, not the nested person's: they are different objects and the person's
-		 * would never match the user Keycloak resolved.
-		 */
+		// The user's own uuid, not the person nested inside it, which is a different object.
 		String uuid = body.path("user").path("uuid").asText(null);
 		if (uuid == null || uuid.isEmpty()) {
 			log.warn("OpenMRS reported an authenticated session without naming the user");

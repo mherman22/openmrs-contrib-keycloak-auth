@@ -12,10 +12,12 @@ package org.openmrs.contrib.keycloak.userstore;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 
@@ -28,6 +30,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -86,14 +89,14 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 	}
 
 	@Test
-	public void authenticatesWhateverTheStoredHashSays() {
+	public void authenticatesWhenOpenmrsSaysSo() {
 		openmrs.authenticates("uuid-user-254");
 
 		assertTrue(authenticates("odd-hash", "anything"));
 	}
 
 	@Test
-	public void refusesWhenOpenmrsRefusesEvenThoughTheStoredHashMatches() {
+	public void refusesWhenOpenmrsRefuses() {
 		openmrs.refusesEverybody();
 
 		assertFalse(authenticates("SidVaish", "Sid123"));
@@ -141,15 +144,49 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 	}
 
 	@Test
+	public void refusesARetiredUserWithoutAskingOpenmrs() {
+		openmrs.authenticates("uuid-user-252");
+
+		assertFalse(authenticates("retired-nurse", "Retired1"));
+		assertThat(openmrs.calls(), equalTo(0));
+	}
+
+	@Test
+	public void refusesACredentialThatIsNotAPasswordWithoutAskingOpenmrs() {
+		openmrs.authenticates("uuid-user-200");
+		UserModel user = authenticator.getUserByUsername(realm, "SidVaish");
+
+		assertFalse(authenticator.isValid(realm, user, new UserCredentialModel(null, OTPCredentialModel.TYPE, "Sid123")));
+		assertThat(openmrs.calls(), equalTo(0));
+	}
+
+	@Test
+	public void refusesWhenOpenmrsRefusesButStillNamesTheUser() {
+		openmrs.refusesButStillNames("uuid-user-200");
+
+		assertFalse(authenticates("SidVaish", "Sid123"));
+	}
+
+	@Test
+	public void refusesWhenOpenmrsAnswersAnErrorStatus() {
+		openmrs.authenticates("uuid-user-200");
+		openmrs.answersStatus(500);
+
+		assertFalse(authenticates("SidVaish", "Sid123"));
+	}
+
+	@Test
+	public void refusesABaseUrlWithNoScheme() {
+		assertThat(OpenmrsSessionClient.problemWith("gateway/openmrs"), containsString("http://"));
+		assertThat(new OpenmrsSessionClient("gateway/openmrs").authenticate("SidVaish", "Sid123").isPresent(),
+		    equalTo(false));
+	}
+
+	@Test
 	public void saysSoWhenNoOpenmrsBaseUrlIsConfigured() {
 		for (String unset : new String[] { null, "", "   " }) {
-			try {
-				new OpenmrsSessionClient(unset);
-				fail("a provider with no OpenMRS base URL cannot check a credential, and must say so");
-			}
-			catch (IllegalArgumentException expected) {
-				assertThat(expected.getMessage(), containsString("OpenMRS base URL"));
-			}
+			assertThat(OpenmrsSessionClient.problemWith(unset), containsString("No OpenMRS base URL"));
+			assertThat(new OpenmrsSessionClient(unset).authenticate("SidVaish", "Sid123").isPresent(), equalTo(false));
 		}
 	}
 
@@ -159,6 +196,28 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 		OpenmrsSessionClient client = new OpenmrsSessionClient(openmrs.baseUrl() + "/");
 
 		assertThat(client.authenticate("SidVaish", "Sid123").orElse(null), equalTo("uuid-user-200"));
+	}
+
+	@Test
+	public void refusesAnIdThatDoesNotIdentifyAnOpenmrsUser() {
+		openmrs.authenticates("uuid-user-200");
+		UserModel notOurs = mock(UserModel.class);
+		when(notOurs.getId()).thenReturn("f:openmrs:not-a-number");
+
+		assertFalse(
+		    authenticator.isValid(realm, notOurs, new UserCredentialModel(null, PasswordCredentialModel.TYPE, "anything")));
+		assertThat(openmrs.calls(), equalTo(0));
+	}
+
+	@Test
+	public void findsNoUserThatDoesNotExist() {
+		assertThat(authenticator.getUserByUsername(realm, "nobody-at-all"), nullValue());
+	}
+
+	@Test
+	public void reportsARetiredUserAsDisabled() {
+		assertFalse(authenticator.getUserByUsername(realm, "retired-nurse").isEnabled());
+		assertTrue(authenticator.getUserByUsername(realm, "SidVaish").isEnabled());
 	}
 
 	private boolean authenticates(String username, String password) {

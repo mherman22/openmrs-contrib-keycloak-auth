@@ -38,21 +38,34 @@ public class StubOpenmrs {
 
 	private boolean personFirst;
 
+	private int status = 200;
+
+	private boolean namesAUserWhenRefusing;
+
+	private String refusedUuid;
+
 	public static final String PERSON_UUID = "uuid-person-not-the-user";
 
 	public StubOpenmrs() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		server.createContext("/ws/rest/v1/session", exchange -> {
+		server.createContext("/openmrs/ws/rest/v1/session", exchange -> {
 			calls++;
 			lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
 			List<String> cookies = exchange.getRequestHeaders().get("Cookie");
 			lastCookie = cookies == null || cookies.isEmpty() ? null : cookies.get(0);
 
+			if (status != 200) {
+				exchange.sendResponseHeaders(status, -1);
+				exchange.close();
+				return;
+			}
+
 			boolean signedIn = authenticatedUuid != null
 			        || (honourSessionCookie && lastCookie != null && lastCookie.contains("JSESSIONID"));
 			String uuid = authenticatedUuid != null ? authenticatedUuid : cookieUuid;
 			String body = signedIn ? "{\"authenticated\":true,\"user\":{" + userObject(uuid) + "}}"
-			        : "{\"authenticated\":false}";
+			        : "{\"authenticated\":false"
+			                + (namesAUserWhenRefusing ? ",\"user\":{" + userObject(refusedUuid) + "}" : "") + "}";
 
 			byte[] payload = body.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -88,7 +101,7 @@ public class StubOpenmrs {
 	}
 
 	public String baseUrl() {
-		return "http://127.0.0.1:" + server.getAddress().getPort();
+		return "http://127.0.0.1:" + server.getAddress().getPort() + "/openmrs";
 	}
 
 	public int calls() {
@@ -121,6 +134,17 @@ public class StubOpenmrs {
 		String person = "\"person\":{\"uuid\":\"" + PERSON_UUID + "\"}";
 		String own = "\"uuid\":\"" + uuid + "\"";
 		return personFirst ? person + "," + own : own + "," + person;
+	}
+
+	/** As OpenMRS does for a locked account: refuses, while still naming the user in the response. */
+	public void refusesButStillNames(String uuid) {
+		this.authenticatedUuid = null;
+		this.namesAUserWhenRefusing = true;
+		this.refusedUuid = uuid;
+	}
+
+	public void answersStatus(int status) {
+		this.status = status;
 	}
 
 	public void stop() {
