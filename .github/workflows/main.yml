@@ -9,18 +9,11 @@ on:
 
 jobs:
   build:
-    # build-maven.yml, not build-backend-module.yml: this is a plain Keycloak provider JAR, and the
-    # backend-module workflow expects an omod module to package and checksum.
+    # Not build-backend-module.yml: that packages and checksums an omod, and this is a plain JAR.
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-maven.yml@main
     with:
-      # Stated rather than inferred. The matrix this replaces was [8, 10, 11, 12, 13], and the Java 8
-      # job died before compiling anything -- "Required Java version 17 is not met by current
-      # version: 1.8.0_502", from impsort-maven-plugin's own prerequisite -- then fail-fast cancelled
-      # the rest, so the whole matrix was red for a reason unrelated to any change. maven.compiler.release
-      # is 17 as well, so Java 8 could not have compiled it either. 17 is the bytecode target; 21 is
-      # what Keycloak 26 runs on. Both have to pass.
+      # 17 is the bytecode target; 21 is what Keycloak 26 runs on.
       java_versions: '[17, 21]'
       main_java_version: '17'
-      # This repository declares no distributionManagement, so there is no snapshot repository to
-      # deploy to.
+      # No distributionManagement in the pom, so there is nowhere to deploy a snapshot.
       deploy_snapshots: false

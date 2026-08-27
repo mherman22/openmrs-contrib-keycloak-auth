@@ -59,19 +59,9 @@
             </dependency>
 
             <!--
-                com.mysql:mysql-connector-j, not the mysql:mysql-connector-java that the OpenMRS
-                platform manages: that coordinate was relocated by MySQL and is frozen at 8.0.33.
-                The platform's version is irrelevant here in any case, since this provider runs inside
-                Keycloak's JVM and reads the OpenMRS database over JDBC, so nothing of OpenMRS is
-                on its classpath.
-
-                Pinned to the version the Keycloak we target already carries, in
-                /opt/keycloak/lib/lib/main, hence provided; compile against it, ship nothing. Move
-                this with keycloak.version, not on its own.
-
-                A deployment still has to put the driver in /opt/keycloak/providers beside this
-                jar. Quarkus does not expose lib/main to provider classloaders, so provided here
-                does not mean present at runtime.
+                com.mysql:mysql-connector-j, not the relocated mysql:mysql-connector-java, which is
+                frozen at 8.0.33. Pinned to what Keycloak 26.7.1 carries, so move it with
+                keycloak.version. The README covers placing the driver in providers/ at deploy time.
             -->
             <dependency>
                 <groupId>com.mysql</groupId>
