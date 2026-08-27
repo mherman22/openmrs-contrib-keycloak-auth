@@ -54,12 +54,6 @@ public class StubOpenmrs {
 			List<String> cookies = exchange.getRequestHeaders().get("Cookie");
 			lastCookie = cookies == null || cookies.isEmpty() ? null : cookies.get(0);
 
-			if (status != 200) {
-				exchange.sendResponseHeaders(status, -1);
-				exchange.close();
-				return;
-			}
-
 			boolean signedIn = authenticatedUuid != null
 			        || (honourSessionCookie && lastCookie != null && lastCookie.contains("JSESSIONID"));
 			String uuid = authenticatedUuid != null ? authenticatedUuid : cookieUuid;
@@ -70,7 +64,7 @@ public class StubOpenmrs {
 			byte[] payload = body.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
 			exchange.getResponseHeaders().add("Set-Cookie", "JSESSIONID=STUBSESSION; Path=/openmrs; HttpOnly");
-			exchange.sendResponseHeaders(200, payload.length);
+			exchange.sendResponseHeaders(status, payload.length);
 			try (OutputStream out = exchange.getResponseBody()) {
 				out.write(payload);
 			}
@@ -143,6 +137,10 @@ public class StubOpenmrs {
 		this.refusedUuid = uuid;
 	}
 
+	/**
+	 * A status other than 200, with the body left intact: a proxy or an error page can carry something
+	 * that parses, and the status is what says it did not come from OpenMRS.
+	 */
 	public void answersStatus(int status) {
 		this.status = status;
 	}
