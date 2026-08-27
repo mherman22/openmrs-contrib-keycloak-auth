@@ -34,6 +34,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Keycloak 26.7.1 ships 2.21.2; the session response is parsed with it. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>2.21.2</version>
+                <scope>provided</scope>
+            </dependency>
+
             <!-- https://mvnrepository.com/artifact/org.keycloak/keycloak-core -->
             <dependency>
                 <groupId>org.keycloak</groupId>

@@ -17,9 +17,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,17 +31,20 @@ public class OpenmrsSessionClient {
 
 	private static final Logger log = LoggerFactory.getLogger(OpenmrsSessionClient.class);
 
-	private static final Pattern AUTHENTICATED = Pattern.compile("\"authenticated\"\\s*:\\s*(true|false)");
-
-	private static final Pattern USER_UUID = Pattern.compile("\"user\"\\s*:\\s*\\{.*?\"uuid\"\\s*:\\s*\"([^\"]+)\"",
-	    Pattern.DOTALL);
+	private static final ObjectMapper JSON = new ObjectMapper();
 
 	private final URI sessionUri;
 
 	private final HttpClient httpClient;
 
 	public OpenmrsSessionClient(String baseUrl) {
-		this.sessionUri = URI.create(baseUrl.replaceAll("/+$", "") + "/ws/rest/v1/session");
+		if (baseUrl == null || baseUrl.trim().isEmpty()) {
+			throw new IllegalArgumentException(
+			        "No OpenMRS base URL is configured, so no credential can be checked. A realm imported "
+			                + "before this provider asked OpenMRS to check passwords will not carry one.");
+		}
+
+		this.sessionUri = URI.create(baseUrl.trim().replaceAll("/+$", "") + "/ws/rest/v1/session");
 		/*
 		 * No cookie handler, and java.net.http does not fall back to CookieHandler.getDefault(). A
 		 * JSESSIONID from an earlier call makes OpenMRS answer authenticated:true to any password at
@@ -89,17 +92,29 @@ public class OpenmrsSessionClient {
 		 * OpenMRS answers 200 with authenticated:false for a wrong password and for a user that does
 		 * not exist, so the status code says nothing about whether anyone signed in.
 		 */
-		Matcher authenticated = AUTHENTICATED.matcher(response.body());
-		if (!authenticated.find() || !"true".equals(authenticated.group(1))) {
+		JsonNode body;
+		try {
+			body = JSON.readTree(response.body());
+		}
+		catch (Exception e) {
+			log.error("Could not read the session response from OpenMRS at {}", sessionUri, e);
 			return Optional.empty();
 		}
 
-		Matcher uuid = USER_UUID.matcher(response.body());
-		if (!uuid.find()) {
+		if (!body.path("authenticated").asBoolean(false)) {
+			return Optional.empty();
+		}
+
+		/*
+		 * The user's own uuid, not the nested person's: they are different objects and the person's
+		 * would never match the user Keycloak resolved.
+		 */
+		String uuid = body.path("user").path("uuid").asText(null);
+		if (uuid == null || uuid.isEmpty()) {
 			log.warn("OpenMRS reported an authenticated session without naming the user");
 			return Optional.empty();
 		}
 
-		return Optional.of(uuid.group(1));
+		return Optional.of(uuid);
 	}
 }

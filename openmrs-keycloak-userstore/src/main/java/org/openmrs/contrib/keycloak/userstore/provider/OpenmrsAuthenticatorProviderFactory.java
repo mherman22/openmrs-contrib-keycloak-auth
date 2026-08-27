@@ -90,14 +90,31 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 
 	private volatile EntityManagerFactory emf;
 
+	/*
+	 * One per factory, not one per session: a java.net.http.HttpClient owns a selector thread and an
+	 * executor, and create() runs on every authentication.
+	 */
+	private volatile OpenmrsSessionClient sessionClient;
+
 	@Override
 	public OpenmrsAuthenticator create(KeycloakSession keycloakSession, ComponentModel config) {
 		if (emf == null) {
 			ensureEntityManagerFactory(config);
 		}
 
-		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()),
-		        new OpenmrsSessionClient(config.get(OPENMRS_BASE_URL)));
+		if (sessionClient == null) {
+			ensureSessionClient(config);
+		}
+
+		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()), sessionClient);
+	}
+
+	private void ensureSessionClient(ComponentModel config) {
+		synchronized (this) {
+			if (sessionClient == null) {
+				sessionClient = new OpenmrsSessionClient(config.get(OPENMRS_BASE_URL));
+			}
+		}
 	}
 
 	@Override
@@ -121,8 +138,12 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 	public void validateConfiguration(KeycloakSession session, RealmModel realm, ComponentModel config)
 	        throws ComponentValidationException {
 		try {
+			ensureSessionClient(config);
 			ensureEntityManagerFactory(config);
 			emf.createEntityManager().close();
+		}
+		catch (IllegalArgumentException e) {
+			throw new ComponentValidationException(e.getMessage(), e);
 		}
 		catch (PersistenceException e) {
 			throw new ComponentValidationException(

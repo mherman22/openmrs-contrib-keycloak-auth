@@ -36,6 +36,10 @@ public class StubOpenmrs {
 
 	private boolean honourSessionCookie;
 
+	private boolean personFirst;
+
+	public static final String PERSON_UUID = "uuid-person-not-the-user";
+
 	public StubOpenmrs() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/ws/rest/v1/session", exchange -> {
@@ -47,7 +51,7 @@ public class StubOpenmrs {
 			boolean signedIn = authenticatedUuid != null
 			        || (honourSessionCookie && lastCookie != null && lastCookie.contains("JSESSIONID"));
 			String uuid = authenticatedUuid != null ? authenticatedUuid : cookieUuid;
-			String body = signedIn ? "{\"authenticated\":true,\"user\":{\"uuid\":\"" + uuid + "\",\"display\":\"stub\"}}"
+			String body = signedIn ? "{\"authenticated\":true,\"user\":{" + userObject(uuid) + "}}"
 			        : "{\"authenticated\":false}";
 
 			byte[] payload = body.getBytes(StandardCharsets.UTF_8);
@@ -103,6 +107,20 @@ public class StubOpenmrs {
 
 		return new String(Base64.getDecoder().decode(lastAuthorization.substring("Basic ".length())),
 		        StandardCharsets.UTF_8);
+	}
+
+	/**
+	 * OpenMRS nests the person inside the user, and the person carries a uuid of its own. Ordering it
+	 * first is how a test reaches a reader that takes whichever uuid it sees first.
+	 */
+	public void nestsThePersonFirst() {
+		this.personFirst = true;
+	}
+
+	private String userObject(String uuid) {
+		String person = "\"person\":{\"uuid\":\"" + PERSON_UUID + "\"}";
+		String own = "\"uuid\":\"" + uuid + "\"";
+		return personFirst ? person + "," + own : own + "," + person;
 	}
 
 	public void stop() {

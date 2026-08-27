@@ -9,11 +9,13 @@
  */
 package org.openmrs.contrib.keycloak.userstore;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 
@@ -128,6 +130,35 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 
 		assertFalse(authenticates("SidVaish", ""));
 		assertThat(openmrs.calls(), equalTo(0));
+	}
+
+	@Test
+	public void readsTheUsersOwnUuidRatherThanTheNestedPersons() {
+		openmrs.authenticates("uuid-user-200");
+		openmrs.nestsThePersonFirst();
+
+		assertTrue(authenticates("SidVaish", "Sid123"));
+	}
+
+	@Test
+	public void saysSoWhenNoOpenmrsBaseUrlIsConfigured() {
+		for (String unset : new String[] { null, "", "   " }) {
+			try {
+				new OpenmrsSessionClient(unset);
+				fail("a provider with no OpenMRS base URL cannot check a credential, and must say so");
+			}
+			catch (IllegalArgumentException expected) {
+				assertThat(expected.getMessage(), containsString("OpenMRS base URL"));
+			}
+		}
+	}
+
+	@Test
+	public void toleratesATrailingSlashOnTheBaseUrl() {
+		openmrs.authenticates("uuid-user-200");
+		OpenmrsSessionClient client = new OpenmrsSessionClient(openmrs.baseUrl() + "/");
+
+		assertThat(client.authenticate("SidVaish", "Sid123").orElse(null), equalTo("uuid-user-200"));
 	}
 
 	private boolean authenticates(String username, String password) {
