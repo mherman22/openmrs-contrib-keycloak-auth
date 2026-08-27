@@ -35,13 +35,34 @@ mvn clean package
    version string, Hibernate reads the prefix, and it is harmless.
 
 3. Restart Keycloak, then add the provider under **User federation** and fill in the JDBC URL, user
-   and password for the OpenMRS database, and the **OpenMRS base URL** — the one Keycloak can reach,
-   which inside Docker is the service name rather than `localhost`.
+   and password for the OpenMRS database, and the **OpenMRS base URL**.
+
+   The base URL is the one **Keycloak itself** can reach, which is not usually the one a browser
+   uses. In Docker it is the service name: `http://gateway/openmrs`, not `http://localhost/openmrs`
+   — inside the Keycloak container `localhost` is Keycloak, and `http://localhost:8080/openmrs`
+   answers `404` from Keycloak's own REST layer rather than failing outright. A realm JSON that
+   reuses a browser-facing variable here starts cleanly and rejects every password.
+
+   The field is left empty on purpose rather than carrying a default, because no default is right
+   for both a bare install and a container.
 
    Against MySQL 8, the default URL in the form (`...?useSSL=false`) fails validation with
    `Public Key Retrieval is not allowed`: MySQL 8 authenticates with `caching_sha2_password`, which
    over an unencrypted connection needs `allowPublicKeyRetrieval=true` in the URL — or, better, a
    connection that is actually encrypted.
+
+## Upgrading a realm that predates this
+
+A realm exported before this provider asked OpenMRS to check passwords carries no base URL. Import
+still succeeds — the provider does not refuse to start without one, because a Keycloak that will not
+boot has no admin console to fix it in — but **every login is refused** and the log says so:
+
+```
+Cannot check the credential of 'X': No OpenMRS base URL is configured, so no credential can be checked.
+```
+
+Add the key to the component config and restart. A base URL that is present but malformed *is*
+rejected when the component is saved, since somebody chose that value.
 
 ## Realm settings this provider depends on
 
@@ -102,22 +123,34 @@ The client that sends it must never carry a cookie between validations. OpenMRS'
 `/ws/rest/v1/session` reports the state of the *session*, not of the credentials on the request: a
 `JSESSIONID` from one successful login makes it answer `authenticated:true` to a wrong password, and
 to no password at all. `OpenmrsSessionClient` builds a `java.net.http.HttpClient` with no cookie
-handler for this reason, and Keycloak's shared `HttpClientProvider` is deliberately not used —
-its cookie behaviour is operator-configurable (`disable-cookies`), so a setting changed for an
-unrelated integration would turn this credential check into "accept every password".
+handler for this reason. Keycloak's shared `HttpClientProvider` is not used: its cookie behaviour is
+operator-configurable (`disable-cookies`), so a setting changed for an unrelated integration would
+reach this credential check. That is avoidable — a per-request cookie store overrides the shared one
+— but it makes a security property depend on configuration elsewhere, and the cost of not sharing is
+that Keycloak's truststore and proxy settings do not apply to this call. An `https` OpenMRS behind an
+internal CA therefore needs that CA in the JVM truststore.
 
-Each validation also leaves OpenMRS holding a server-side session that is never reclaimed, including
-for failed guesses, until it idles out.
+One client is kept per configured base URL, so two federation components pointing at two OpenMRS
+instances each reach their own. The `EntityManagerFactory` is not keyed that way: it is built once
+from whichever component is used first, so **this provider supports one OpenMRS database per
+Keycloak, and changing the JDBC settings takes effect at the next restart.**
 
-The client is built once per provider factory and holds the base URL it was built with, as the
-`EntityManagerFactory` holds the JDBC settings. **Changing either in the admin console takes effect
-at the next Keycloak restart, not at the next login.**
+Each validation leaves a Tomcat session on OpenMRS for its `session-timeout` — 30 minutes on the
+reference distribution — including for failed guesses.
 
 ## Connection pool sizing
 
-With `NO_CACHE`, a login is two queries against the OpenMRS database — the user lookup, and a
-re-read of that user to get its uuid — plus one HTTP request to OpenMRS, which is what decides the
-credential.
+With `NO_CACHE`, a login is a user lookup, a re-read of that user for its uuid, and one HTTP request
+to OpenMRS, which is what decides the credential. `OpenmrsUserModel.person` is an eager
+`@OneToOne`, so each of those user reads also selects the person row — to see the real shape, turn
+`hibernate.show_sql` on and count what a single login emits, rather than trusting a number here.
+
+**The JDBC connection is held for the whole HTTP round trip.** Hibernate opens an implicit read
+transaction on the first statement and holds the physical connection until the `EntityManager`
+closes, which happens after the credential check returns. So the pool below is a ceiling on
+concurrent logins *including the time OpenMRS takes to answer*, not just on concurrent queries: a
+slow OpenMRS occupies a connection per login for as long as it takes to reply, up to the client's
+5-second request timeout.
 
 Those run through one `EntityManagerFactory` per provider factory, using **Hibernate's built-in
 connection pool, capped at 20** (`PersistenceUnitInfoImpl`). Two consequences:

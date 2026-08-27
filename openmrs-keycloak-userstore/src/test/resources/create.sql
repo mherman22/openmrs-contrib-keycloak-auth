@@ -31,14 +31,3 @@ ALTER TABLE users
     ADD FOREIGN KEY (person_id)
     REFERENCES person (person_id);
 
--- The tables OpenMRS locks accounts through: lockoutTimestamp and loginAttempts per user, and
--- security.unlockAccountWaitingTime for the installation. clob, as OpenMRS declares them.
-CREATE TABLE user_property (
-  user_id int NOT NULL,
-  property varchar(255) NOT NULL,
-  property_value clob,
-  PRIMARY KEY (user_id, property));
-
-CREATE TABLE global_property (
-  property varchar(255) NOT NULL PRIMARY KEY,
-  property_value clob);
