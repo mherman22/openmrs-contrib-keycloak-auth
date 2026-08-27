@@ -1,8 +1,8 @@
 # OpenMRS user federation for Keycloak
 
-A Keycloak `UserStorageProvider` and `CredentialInputValidator` that authenticates against the
-OpenMRS `users` table, so clinicians sign in with the OpenMRS password they already have and there
-is no second directory to keep in step.
+A Keycloak `UserStorageProvider` and `CredentialInputValidator` that finds users in the OpenMRS
+`users` table and has OpenMRS itself check their passwords, so clinicians sign in with the OpenMRS
+password they already have and there is no second directory to keep in step.
 
 Built for **Keycloak 26.7.1**: a plain JAR in `providers/`, Java 17 bytecode, the Stream-based query
 SPI, and every dependency pinned to what that Keycloak already ships, in `provided` scope. The
@@ -35,7 +35,8 @@ mvn clean package
    version string, Hibernate reads the prefix, and it is harmless.
 
 3. Restart Keycloak, then add the provider under **User federation** and fill in the JDBC URL, user
-   and password for the OpenMRS database.
+   and password for the OpenMRS database, and the **OpenMRS base URL** — the one Keycloak can reach,
+   which inside Docker is the service name rather than `localhost`.
 
    Against MySQL 8, the default URL in the form (`...?useSSL=false`) fails validation with
    `Public Key Retrieval is not allowed`: MySQL 8 authenticates with `caching_sha2_password`, which
@@ -72,11 +73,16 @@ Turn it off under **Authentication → Required actions → Verify Profile**.
 
 OpenMRS counts failed sign-ins per user and locks the account past
 `security.allowedFailedLoginsBeforeLockout` (7 by default) for
-`security.unlockAccountWaitingTime` minutes (5 by default). This provider **reads** that lockout, so
-an account OpenMRS has locked is refused here too — but it writes nothing back, so failures at the
-Keycloak login form never count towards that threshold.
+`security.unlockAccountWaitingTime` minutes (5 by default). Because OpenMRS is what authenticates
+here, that lockout applies to this door as well, and **guesses at the Keycloak form count towards
+it**: `HibernateContextDAO.authenticate` increments `loginAttempts` and, once locked, throws before
+it reads the password.
 
-Keycloak's own brute force detection is therefore the only thing metering guesses at this door, and
+That is the behaviour this provider exists to keep consistent, and it is also a new surface. Anyone
+who can reach the Keycloak login form can lock a named clinician out of OpenMRS itself for
+`security.unlockAccountWaitingTime` minutes, without knowing any password.
+
+Keycloak's own brute force detection is what meters guesses before they reach OpenMRS, and
 Keycloak creates realms with it **off**. Once enabled, its default `failureFactor` is 30, four times
 looser than the OpenMRS threshold it is standing in for. Check what your realm actually has:
 
@@ -87,11 +93,27 @@ kcadm.sh get realms/<realm> --fields bruteForceProtected,failureFactor,waitIncre
 Until this is on, the Keycloak login form is an unmetered password oracle against the OpenMRS user
 table — and a more attractive one than the OpenMRS form, because it looks like Keycloak.
 
+### Reaching OpenMRS: HTTPS, and no cookie jar
+
+Credentials are checked by sending them to OpenMRS, so **the base URL must be `https` anywhere the
+two are not on the same host**. The password is in an `Authorization: Basic` header on every login.
+
+The client that sends it must never carry a cookie between validations. OpenMRS's
+`/ws/rest/v1/session` reports the state of the *session*, not of the credentials on the request: a
+`JSESSIONID` from one successful login makes it answer `authenticated:true` to a wrong password, and
+to no password at all. `OpenmrsSessionClient` builds a `java.net.http.HttpClient` with no cookie
+handler for this reason, and Keycloak's shared `HttpClientProvider` is deliberately not used —
+its cookie behaviour is operator-configurable (`disable-cookies`), so a setting changed for an
+unrelated integration would turn this credential check into "accept every password".
+
+Each validation also leaves OpenMRS holding a server-side session that is never reclaimed, including
+for failed guesses, until it idles out.
+
 ## Connection pool sizing
 
-With `NO_CACHE`, a login is three queries against the OpenMRS database — the user lookup, the
-lockout property, and the credential — plus a fourth to read the unlock waiting time when the
-account is actually locked.
+With `NO_CACHE`, a login is two queries against the OpenMRS database — the user lookup, and a
+re-read of that user to get its uuid — plus one HTTP request to OpenMRS, which is what decides the
+credential.
 
 Those run through one `EntityManagerFactory` per provider factory, using **Hibernate's built-in
 connection pool, capped at 20** (`PersistenceUnitInfoImpl`). Two consequences:
@@ -117,20 +139,17 @@ The two systems are now coupled at the schema level. This is what the coupling c
 
 | Read through | Tables and columns |
 | --- | --- |
-| JPA entities, checked by `hbm2ddl validate` | `users`: `user_id`, `person_id`, `username`, `system_id`, `email`, `retired`<br>`person`: `person_id`, `gender`<br>`person_name`: `person_name_id`, `person_id`, `given_name`, `middle_name`, `family_name` |
-| Native SQL, not checked | `users`: `password`, `salt`, `retired`<br>`user_property`: `user_id`, `property`, `property_value`<br>`global_property`: `property`, `property_value` |
+| JPA entities, checked by `hbm2ddl validate` | `users`: `user_id`, `uuid`, `person_id`, `username`, `system_id`, `email`, `retired`<br>`person`: `person_id`, `gender`<br>`person_name`: `person_name_id`, `person_id`, `given_name`, `middle_name`, `family_name` |
+
+No native SQL, and no credential columns: `password`, `salt`, `user_property` and `global_property`
+are not read at all. Those went when the credential check moved to OpenMRS.
 
 `hbm2ddl validate` runs when the `EntityManagerFactory` is built, which happens when the federation
-component is saved and again on the first use after a restart. The two halves of the table fail
-differently:
+component is saved and again on the first use after a restart.
 
 - **A mapped column that is renamed or removed** fails validation, so the `EntityManagerFactory`
   cannot be built. Saving the component in the admin console reports it immediately. After a
   restart, it takes every login with it.
-- **A column used only by a native query** fails when that query runs — at the first login. The
-  credential check answers `false` on a `PersistenceException`, so this presents as every user's
-  password having suddenly become wrong, with the real exception only in the server log.
-
 These are core OpenMRS tables and have been stable from 1.9 through 2.8, so the likelihood is low
 and the blast radius is everyone. On an OpenMRS upgrade: run this project's tests, whose schema is
 the same shape, and then point a Keycloak at a copy of the upgraded database and save the federation
@@ -138,28 +157,35 @@ component — that is the cheapest way to run `validate` against the real thing.
 
 ## How a password is checked
 
-The same three encodings OpenMRS's own `Security.hashMatches` accepts, tried in the same order
-against the hash of the password concatenated with the user's salt:
+OpenMRS checks it. This provider sends the name it resolved the user by and the password as it was
+typed to `GET /ws/rest/v1/session`, as Basic auth, and reads the answer.
 
-1. SHA-512, hex, zero-padded per byte — what OpenMRS writes today
-2. SHA-1, hex, zero-padded per byte — what it wrote before that
-3. SHA-1 rendered by the historic routine that dropped the leading zero of every byte below `0x10`
+That means whatever the deployment has configured decides the login — the hash encoding, password
+expiry, lockout, and any `DelegatingAuthenticationScheme` in use — rather than a second
+implementation here agreeing with it by hand.
 
-A database that has ever run an older OpenMRS holds all three, and OpenMRS still accepts all three,
-so a provider that checks only the first locks out users who can sign in to OpenMRS today — and
-tells them their password is wrong. A stored hash in none of those shapes is logged, by user id,
-saying that no password can match it.
+Two things about the answer are easy to get wrong, and both are load-bearing:
+
+- **It is always `200`.** A wrong password, an unknown user and no credentials at all all return
+  `200` with `{"authenticated":false}`. The status code says nothing; the `authenticated` field is
+  the only signal.
+- **`authenticated:true` is not enough.** A name can be one user's `username` and another's
+  `system_id`, and OpenMRS answers for whichever it resolves — so the response's `user.uuid` must
+  equal the uuid of the user Keycloak resolved. Otherwise a token gets minted for a user who never
+  gave their password.
 
 ## Deliberate differences from OpenMRS's own authenticate
 
-- **Nothing is written back.** No password changes, no `loginAttempts`, no `lastLoginTimestamp`.
-  This provider validates credentials and nothing else.
+- **No password changes.** This provider never writes to the OpenMRS schema itself. It does cause
+  OpenMRS to record a sign-in, because OpenMRS is the one authenticating: a failed attempt at the
+  Keycloak form increments that user's `loginAttempts`, and a successful one writes
+  `lastLoginTimestamp` and resets the counter.
 - **A retired user is reported to Keycloak as disabled** and refused at the credential check, but is
   still found by lookups, so an administrator can see the account they retired. The login form
   therefore says "Account is disabled" where OpenMRS would say "Invalid username and/or password".
-- **A locked-out user is refused as an ordinary bad credential.** A `CredentialInputValidator`
-  cannot put OpenMRS's "Invalid number of connection attempts. Please try again later." on the
-  Keycloak login form.
+- **A locked-out user is refused as an ordinary bad credential.** OpenMRS raises
+  "Invalid number of connection attempts. Please try again later.", but a `CredentialInputValidator`
+  can only answer yes or no, so the Keycloak form shows a bad-password message.
 - **A digits-only login is not expanded to a check-digit system id.** OpenMRS matches a login of
   `1234` against the system id `123-4`; users who rely on that must type the system id as stored.
 - **Attribute search and group membership answer with empty streams.** OpenMRS users carry neither,

@@ -16,6 +16,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.Data;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "users")
@@ -25,6 +27,13 @@ public class OpenmrsUserModel {
 	@Id
 	@Column(name = "user_id")
 	private Integer userId;
+
+	/**
+	 * Identifies the user in OpenMRS's REST session response, which is how a credential check confirms
+	 * OpenMRS authenticated the same user Keycloak resolved.
+	 */
+	@JdbcTypeCode(SqlTypes.CHAR)
+	private String uuid;
 
 	@OneToOne
 	@JoinColumn(name = "person_id")

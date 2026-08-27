@@ -43,29 +43,6 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(userDao.getOpenmrsUserByUserId(186).getUsername(), equalTo("Sid"));
 	}
 
-	@Test
-	public void getPasswordAndSalt() {
-		String[] result = userDao.getUserPasswordAndSaltOnRecord(200);
-
-		assertThat(result[0], equalTo(
-		    "0dd4de366d0ee9c2cad07be099cdb954d8f60f8eedd4a968fa624e51bc8022ebb85e914bf39846a5dcbc9d89fd8b86a7143a1698136df05cf1ce3dc595df0321"));
-		assertThat(result[1], equalTo("123"));
-	}
-
-	@Test
-	public void readsAUserThatHasNoPasswordWithoutThrowing() {
-		String[] result = userDao.getUserPasswordAndSaltOnRecord(152);
-
-		assertThat(result, notNullValue());
-		assertThat(result[0], nullValue());
-		assertThat(result[1], nullValue());
-	}
-
-	@Test
-	public void answersNullForTheCredentialOfARetiredUser() {
-		assertThat(userDao.getUserPasswordAndSaltOnRecord(252), nullValue());
-	}
-
 	/**
 	 * A retired user is still found, so an administrator can see the account they retired in the
 	 * Keycloak console and in a user search. They are refused at the credential check instead.
@@ -76,21 +53,6 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 
 		assertThat(retired, notNullValue());
 		assertThat(retired.getRetired(), equalTo(true));
-	}
-
-	@Test
-	public void answersNullForTheCredentialOfAUserThatDoesNotExist() {
-		assertThat(userDao.getUserPasswordAndSaltOnRecord(4040), nullValue());
-	}
-
-	/**
-	 * User 400's username is user 401's system_id. The credential read has to belong to the user that
-	 * was asked for.
-	 */
-	@Test
-	public void readsTheCredentialOfTheUserItIsAskedFor() {
-		assertThat(userDao.getUserPasswordAndSaltOnRecord(400)[1], equalTo("c4"));
-		assertThat(userDao.getUserPasswordAndSaltOnRecord(401)[1], equalTo("c5"));
 	}
 
 	@Test
@@ -113,16 +75,6 @@ public class JPAHibernateCRUDTest extends JPAHibernateTest {
 		assertThat(user.getUserId(), equalTo(99));
 		assertThat(user.getUsername(), nullValue());
 		assertThat(user.getSystemId(), equalTo("99-1"));
-	}
-
-	@Test
-	public void readsTheCredentialOfAUserThatHasOnlyASystemId() {
-		String[] result = userDao.getUserPasswordAndSaltOnRecord(99);
-
-		assertThat(result, notNullValue());
-		assertThat(result[0], equalTo(
-		    "710cfad9cfcbd4b00d0bce89d9d812c904e307f9e34eb157e43e28e5de3f8f46007561b1fc8de0da85bdd2d4a770a5099076972ffe559bde3d7176aeb90a01a0"));
-		assertThat(result[1], equalTo("999"));
 	}
 
 	@Test

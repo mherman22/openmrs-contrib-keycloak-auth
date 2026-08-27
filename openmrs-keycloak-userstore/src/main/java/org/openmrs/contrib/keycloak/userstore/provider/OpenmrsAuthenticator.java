@@ -9,10 +9,8 @@
  */
 package org.openmrs.contrib.keycloak.userstore.provider;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import jakarta.persistence.PersistenceException;
@@ -31,6 +29,7 @@ import org.keycloak.storage.StorageId;
 import org.keycloak.storage.UserStorageProvider;
 import org.keycloak.storage.user.UserLookupProvider;
 import org.keycloak.storage.user.UserQueryProvider;
+import org.openmrs.contrib.keycloak.userstore.data.OpenmrsSessionClient;
 import org.openmrs.contrib.keycloak.userstore.data.UserAdapter;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
@@ -48,10 +47,14 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 
 	protected UserDao userDao;
 
-	public OpenmrsAuthenticator(KeycloakSession session, ComponentModel model, UserDao userDao) {
+	protected OpenmrsSessionClient sessionClient;
+
+	public OpenmrsAuthenticator(KeycloakSession session, ComponentModel model, UserDao userDao,
+	    OpenmrsSessionClient sessionClient) {
 		this.session = session;
 		this.model = model;
 		this.userDao = userDao;
+		this.sessionClient = sessionClient;
 	}
 
 	@Override
@@ -100,45 +103,36 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			return false;
 		}
 
-		String[] passwordAndSalt;
+		OpenmrsUserModel resolved;
 		try {
-			if (userDao.isLockedOutInOpenmrs(userId)) {
-				// Before the password check, as OpenMRS does, so a refusal cannot confirm a password.
-				log.info("Refusing the credential of OpenMRS user {}: OpenMRS has the account locked out", userId);
-				return false;
-			}
-
-			passwordAndSalt = userDao.getUserPasswordAndSaltOnRecord(userId);
+			resolved = userDao.getOpenmrsUserByUserId(userId);
 		}
 		catch (PersistenceException e) {
-			log.error("Caught exception while fetching password and salt from database", e);
+			log.error("Could not read OpenMRS user {} to check a credential", userId, e);
 			return false;
 		}
 
-		if (passwordAndSalt == null) {
+		// Trimmed below: uuid is CHAR in OpenMRS, and a CHAR comes back blank-padded on some engines.
+		if (resolved == null || resolved.getUuid() == null) {
 			return false;
 		}
 
-		String passwordOnRecord = passwordAndSalt[0];
-		String saltOnRecord = passwordAndSalt[1];
-		String currentPassword = credentialInput.getChallengeResponse();
-
-		if (passwordOnRecord == null || saltOnRecord == null || currentPassword == null) {
+		Optional<String> authenticated = sessionClient.authenticate(userModel.getUsername(),
+		    credentialInput.getChallengeResponse());
+		if (!authenticated.isPresent()) {
 			return false;
 		}
 
-		if (hashMatches(passwordOnRecord, currentPassword + saltOnRecord)) {
-			return true;
+		/*
+		 * A name can be one user's username and another's system_id, and OpenMRS answers for whichever
+		 * it resolves, so a token would otherwise be minted for a user who never gave their password.
+		 */
+		if (!authenticated.get().equals(resolved.getUuid().trim())) {
+			log.warn("Refusing the credential of OpenMRS user {}: OpenMRS authenticated a different user", userId);
+			return false;
 		}
 
-		if (!isRecognisedHashFormat(passwordOnRecord)) {
-			log.warn("The password on record for OpenMRS user {} is {} characters long and is neither a SHA-512 nor a "
-			        + "SHA-1 hash. No password can match it, so this user cannot sign in until their OpenMRS password "
-			        + "is set again.",
-			    userId, passwordOnRecord.length());
-		}
-
-		return false;
+		return true;
 	}
 
 	/**
@@ -153,76 +147,6 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 			log.warn("Cannot check a credential for '{}': it does not identify an OpenMRS user", userModel.getId());
 			return null;
 		}
-	}
-
-	/**
-	 * The same three encodings OpenMRS's {@code Security.hashMatches} accepts, in the order it tries
-	 * them: SHA-512 hex, SHA-1 hex, and SHA-1 from the historic routine that dropped leading zeros.
-	 */
-	private boolean hashMatches(String hashOnRecord, String passwordAndSalt) {
-		byte[] input = passwordAndSalt.getBytes(StandardCharsets.UTF_8);
-		return matches(hashOnRecord, hexString(digest("SHA-512", input)))
-		        || matches(hashOnRecord, hexString(digest("SHA-1", input)))
-		        || matches(hashOnRecord, incorrectHexString(digest("SHA-1", input)));
-	}
-
-	/**
-	 * A digest per call: MessageDigest is stateful and unsynchronised, so a shared instance lets two
-	 * concurrent logins interleave into one another's hash.
-	 */
-	private static byte[] digest(String algorithm, byte[] input) {
-		try {
-			return MessageDigest.getInstance(algorithm).digest(input);
-		}
-		catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException(algorithm + " is needed to check OpenMRS passwords", e);
-		}
-	}
-
-	/** Compared in constant time: String.equals stops at the first character that differs. */
-	private static boolean matches(String hashOnRecord, String candidate) {
-		return MessageDigest.isEqual(hashOnRecord.getBytes(StandardCharsets.UTF_8),
-		    candidate.getBytes(StandardCharsets.UTF_8));
-	}
-
-	/**
-	 * The shapes {@link #hashMatches} can produce: 128 hex characters of SHA-512, or at most 40 of
-	 * SHA-1, fewer where the historic routine dropped leading zeros.
-	 */
-	private static boolean isRecognisedHashFormat(String hashOnRecord) {
-		if (hashOnRecord.isEmpty() || (hashOnRecord.length() != 128 && hashOnRecord.length() > 40)) {
-			return false;
-		}
-
-		return hashOnRecord.chars().allMatch(character -> Character.digit(character, 16) >= 0);
-	}
-
-	/**
-	 * OpenMRS's {@code Security.incorrectHexString}: Integer.toHexString per byte, which renders a
-	 * value under 0x10 as a single character. OpenMRS still accepts hashes written that way.
-	 */
-	private String incorrectHexString(byte[] block) {
-		StringBuilder buf = new StringBuilder();
-		for (byte aBlock : block) {
-			buf.append(Integer.toHexString(aBlock & 0xFF));
-		}
-
-		return buf.toString();
-	}
-
-	private String hexString(byte[] block) {
-		StringBuilder buf = new StringBuilder();
-		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-		int high;
-		int low;
-		for (byte aBlock : block) {
-			high = ((aBlock & 0xf0) >> 4);
-			low = (aBlock & 0x0f);
-			buf.append(hexChars[high]);
-			buf.append(hexChars[low]);
-		}
-
-		return buf.toString();
 	}
 
 	/**

@@ -13,7 +13,6 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.when;
 
 import org.junit.Before;
@@ -25,6 +24,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+import org.openmrs.contrib.keycloak.userstore.data.OpenmrsSessionClient;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 import org.openmrs.contrib.keycloak.userstore.provider.OpenmrsAuthenticator;
@@ -50,7 +50,8 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 
 	@Before
 	public void setup() {
-		openmrsAuthenticator = new OpenmrsAuthenticator(session, model, userDao);
+		openmrsAuthenticator = new OpenmrsAuthenticator(session, model, userDao,
+		        new OpenmrsSessionClient("http://127.0.0.1:1"));
 
 		openmrsUserModel = new OpenmrsUserModel();
 		openmrsUserModel.setUserId(152);
@@ -87,16 +88,6 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		when(userDao.getOpenmrsUserByUserId(404)).thenReturn(null);
 
 		assertThat(openmrsAuthenticator.getUserById(realmModel, "f:00000000-0000-0000-0000-000000000000:404"), nullValue());
-	}
-
-	@Test
-	public void aUserWithNoCredentialRowSimplyFailsToAuthenticate() {
-		when(userDao.getOpenmrsUserByUsername("admin")).thenReturn(openmrsUserModel);
-		UserModel userModel = openmrsAuthenticator.getUserByUsername(realmModel, "admin");
-		when(userDao.getUserPasswordAndSaltOnRecord(152)).thenReturn(null);
-
-		assertFalse(openmrsAuthenticator.isValid(realmModel, userModel, new org.keycloak.models.UserCredentialModel(null,
-		        org.keycloak.models.credential.PasswordCredentialModel.TYPE, "whatever")));
 	}
 
 	@Test

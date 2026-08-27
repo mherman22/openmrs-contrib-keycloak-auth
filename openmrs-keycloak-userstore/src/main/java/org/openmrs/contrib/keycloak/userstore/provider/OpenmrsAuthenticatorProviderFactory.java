@@ -36,6 +36,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.storage.UserStorageProviderFactory;
+import org.openmrs.contrib.keycloak.userstore.data.OpenmrsSessionClient;
 import org.openmrs.contrib.keycloak.userstore.data.UserDao;
 import org.openmrs.contrib.keycloak.userstore.models.OpenmrsUserModel;
 import org.openmrs.contrib.keycloak.userstore.models.PersonModel;
@@ -46,6 +47,8 @@ import org.slf4j.LoggerFactory;
 public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderFactory<OpenmrsAuthenticator> {
 
 	public static final String PROVIDER_NAME = "openmrs-authentication-provider";
+
+	public static final String OPENMRS_BASE_URL = "OpenMRS Base URL";
 
 	private static final Logger log = LoggerFactory.getLogger(OpenmrsAuthenticatorProviderFactory.class);
 
@@ -67,6 +70,14 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 		            .type(ProviderConfigProperty.STRING_TYPE)
 					.add()
 				.property()
+					.name(OPENMRS_BASE_URL)
+					.defaultValue("http://localhost:8080/openmrs")
+					.helpText("The base URL of the OpenMRS instance whose users these are. Credentials are "
+					        + "checked by asking it, so that OpenMRS's own authentication scheme decides them. "
+					        + "Use https in production: passwords are sent to it.")
+					.type(ProviderConfigProperty.STRING_TYPE)
+					.add()
+				.property()
 					.name("Password")
 					.defaultValue("openmrs")
 		            .helpText("The passsword for the MySQL user")
@@ -85,7 +96,8 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 			ensureEntityManagerFactory(config);
 		}
 
-		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()));
+		return new OpenmrsAuthenticator(keycloakSession, config, new UserDao(emf.createEntityManager()),
+		        new OpenmrsSessionClient(config.get(OPENMRS_BASE_URL)));
 	}
 
 	@Override

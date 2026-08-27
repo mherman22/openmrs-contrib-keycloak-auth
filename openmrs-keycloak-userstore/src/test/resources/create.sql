@@ -15,6 +15,8 @@ ALTER TABLE person_name
 
 CREATE TABLE users (
   user_id int NOT NULL PRIMARY KEY,
+  -- OpenMRS's REST session response identifies the authenticated user by this.
+  uuid char(38) NOT NULL,
   person_id int DEFAULT NULL,
   -- Nullable, as OpenMRS has it: a user created without a username is identified by system_id alone.
   username varchar(255) DEFAULT NULL,
