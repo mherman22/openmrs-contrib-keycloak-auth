@@ -44,7 +44,11 @@ public class StubOpenmrs {
 
 	private String refusedUuid;
 
-	public static final String PERSON_UUID = "uuid-person-not-the-user";
+	private String cookieUuid;
+
+	private String redirectTo;
+
+	private String personUuid = "uuid-of-the-person-not-the-user";
 
 	public StubOpenmrs() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -61,6 +65,13 @@ public class StubOpenmrs {
 			        : "{\"authenticated\":false"
 			                + (namesAUserWhenRefusing ? ",\"user\":{" + userObject(refusedUuid) + "}" : "") + "}";
 
+			if (redirectTo != null) {
+				exchange.getResponseHeaders().add("Location", redirectTo);
+				exchange.sendResponseHeaders(302, -1);
+				exchange.close();
+				return;
+			}
+
 			byte[] payload = body.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
 			exchange.getResponseHeaders().add("Set-Cookie", "JSESSIONID=STUBSESSION; Path=/openmrs; HttpOnly");
@@ -71,8 +82,6 @@ public class StubOpenmrs {
 		});
 		server.start();
 	}
-
-	private String cookieUuid;
 
 	/** Answers authenticated:true, naming this user, for any credential offered. */
 	public void authenticates(String uuid) {
@@ -117,15 +126,18 @@ public class StubOpenmrs {
 	}
 
 	/**
-	 * OpenMRS nests the person inside the user, and the person carries a uuid of its own. Ordering it
-	 * first is how a test reaches a reader that takes whichever uuid it sees first.
+	 * Answers with a user whose own uuid is somebody else's, while the person nested inside it carries
+	 * the uuid the caller is looking for. Anything that takes a uuid from the response without
+	 * insisting on the user's own reads the person's and authenticates the wrong user.
 	 */
-	public void nestsThePersonFirst() {
+	public void authenticatesSomebodyElseButNestsThePerson(String otherUuid, String personUuid) {
+		this.authenticatedUuid = otherUuid;
+		this.personUuid = personUuid;
 		this.personFirst = true;
 	}
 
 	private String userObject(String uuid) {
-		String person = "\"person\":{\"uuid\":\"" + PERSON_UUID + "\"}";
+		String person = "\"person\":{\"uuid\":\"" + personUuid + "\"}";
 		String own = "\"uuid\":\"" + uuid + "\"";
 		return personFirst ? person + "," + own : own + "," + person;
 	}
@@ -141,6 +153,11 @@ public class StubOpenmrs {
 	 * A status other than 200, with the body left intact: a proxy or an error page can carry something
 	 * that parses, and the status is what says it did not come from OpenMRS.
 	 */
+	/** Sends the caller somewhere else, as a proxy or a login page would. */
+	public void redirectsTo(String location) {
+		this.redirectTo = location;
+	}
+
 	public void answersStatus(int status) {
 		this.status = status;
 	}

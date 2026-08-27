@@ -120,8 +120,8 @@ public class OpenmrsAuthenticator implements CredentialInputValidator, UserLooku
 		 * The name from the same row the uuid came from, so both halves of the check describe one
 		 * user. OpenMRS identifies a user with no username by its system_id.
 		 */
-		String identifier = resolved.getUsername() == null ? resolved.getSystemId() : resolved.getUsername();
-		Optional<String> authenticated = sessionClient.authenticate(identifier, credentialInput.getChallengeResponse());
+		Optional<String> authenticated = sessionClient.authenticate(resolved.getIdentifier(),
+		    credentialInput.getChallengeResponse());
 		if (!authenticated.isPresent()) {
 			return false;
 		}

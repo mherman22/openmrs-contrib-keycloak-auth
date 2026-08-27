@@ -22,8 +22,6 @@ CREATE TABLE users (
   username varchar(255) DEFAULT NULL,
   system_id varchar(50) DEFAULT NULL,
   email varchar(255) DEFAULT NULL,
-  password varchar(128) DEFAULT NULL,
-  salt varchar(128) DEFAULT NULL,
   -- How OpenMRS disables an account: not null, and false unless the user has been retired.
   retired boolean NOT NULL DEFAULT FALSE);
 

@@ -110,6 +110,23 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 	}
 
 	@Test
+	public void doesNotFollowARedirectCarryingThePassword() throws Exception {
+		StubOpenmrs elsewhere = new StubOpenmrs();
+		elsewhere.authenticates("uuid-user-200");
+		try {
+			openmrs.authenticates("uuid-user-200");
+			openmrs.redirectsTo(elsewhere.baseUrl() + "/ws/rest/v1/session");
+
+			assertFalse(authenticates("SidVaish", "Sid123"));
+			assertThat("the password must not be re-sent to whatever Location names", elsewhere.credentialsOffered(),
+			    equalTo(null));
+		}
+		finally {
+			elsewhere.stop();
+		}
+	}
+
+	@Test
 	public void refusesWhenOpenmrsCannotBeReached() {
 		openmrs.stop();
 
@@ -137,10 +154,9 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 
 	@Test
 	public void readsTheUsersOwnUuidRatherThanTheNestedPersons() {
-		openmrs.authenticates("uuid-user-200");
-		openmrs.nestsThePersonFirst();
+		openmrs.authenticatesSomebodyElseButNestsThePerson("uuid-user-401", "uuid-user-200");
 
-		assertTrue(authenticates("SidVaish", "Sid123"));
+		assertFalse(authenticates("SidVaish", "Sid123"));
 	}
 
 	@Test

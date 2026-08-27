@@ -61,8 +61,8 @@ boot has no admin console to fix it in — but **every login is refused** and th
 Cannot check the credential of 'X': No OpenMRS base URL is configured, so no credential can be checked.
 ```
 
-Add the key to the component config and restart. A base URL that is present but malformed *is*
-rejected when the component is saved, since somebody chose that value.
+Add the key to the component config; the next login uses it, with no restart. A base URL that is
+present but malformed *is* rejected when the component is saved, since somebody chose that value.
 
 ## Realm settings this provider depends on
 
@@ -142,17 +142,19 @@ reference distribution — including for failed guesses.
 
 With `NO_CACHE`, a login is a user lookup, a re-read of that user for its uuid, and one HTTP request
 to OpenMRS, which is what decides the credential. `OpenmrsUserModel.person` is an eager
-`@OneToOne`, so each of those user reads also selects the person row — to see the real shape, turn
-`hibernate.show_sql` on and count what a single login emits, rather than trusting a number here.
+`@OneToOne`, which adds a person select the first time a user is read in a session — to see the real
+shape, turn `hibernate.show_sql` on and count what a single login emits, rather than trusting a
+number here.
 
 **The JDBC connection is held for the whole HTTP round trip.** Hibernate opens an implicit read
 transaction on the first statement and holds the physical connection until the `EntityManager`
 closes, which happens after the credential check returns. So the pool below is a ceiling on
 concurrent logins *including the time OpenMRS takes to answer*, not just on concurrent queries: a
-slow OpenMRS occupies a connection per login for as long as it takes to reply, up to the client's
-5-second request timeout.
+slow OpenMRS occupies a connection per login for as long as it takes to reply. The connect and
+request timeouts are 5 seconds each and the JDK applies them independently, so the worst case is
+their sum.
 
-Those run through one `EntityManagerFactory` per provider factory, using **Hibernate's built-in
+The database reads run through one `EntityManagerFactory` per provider factory, using **Hibernate's built-in
 connection pool, capped at 20** (`PersistenceUnitInfoImpl`). Two consequences:
 
 - Keycloak holds at most twenty connections to the OpenMRS database. Size `max_connections` on the
@@ -184,9 +186,10 @@ are not read at all. Those went when the credential check moved to OpenMRS.
 `hbm2ddl validate` runs when the `EntityManagerFactory` is built, which happens when the federation
 component is saved and again on the first use after a restart.
 
-- **A mapped column that is renamed or removed** fails validation, so the `EntityManagerFactory`
-  cannot be built. Saving the component in the admin console reports it immediately. After a
-  restart, it takes every login with it.
+A mapped column that is renamed or removed fails validation, so the `EntityManagerFactory` cannot be
+built. Saving the component in the admin console reports it immediately; after a restart, it takes
+every login with it.
+
 These are core OpenMRS tables and have been stable from 1.9 through 2.8, so the likelihood is low
 and the blast radius is everyone. On an OpenMRS upgrade: run this project's tests, whose schema is
 the same shape, and then point a Keycloak at a copy of the upgraded database and save the federation

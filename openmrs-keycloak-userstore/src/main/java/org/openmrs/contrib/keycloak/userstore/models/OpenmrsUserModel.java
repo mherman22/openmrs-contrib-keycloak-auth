@@ -51,4 +51,9 @@ public class OpenmrsUserModel {
 	 * retired.
 	 */
 	private Boolean retired;
+
+	/** The name OpenMRS knows this user by: its username, or its system_id when it has no username. */
+	public String getIdentifier() {
+		return username == null ? systemId : username;
+	}
 }
