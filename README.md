@@ -117,7 +117,8 @@ table — and a more attractive one than the OpenMRS form, because it looks like
 ### Reaching OpenMRS: HTTPS, and no cookie jar
 
 Credentials are checked by sending them to OpenMRS, so **the base URL must be `https` anywhere the
-two are not on the same host**. The password is in an `Authorization: Basic` header on every login.
+two are not on the same host**. The password is in an `Authorization: Basic` header on every login
+that is checked there.
 
 The client that sends it must never carry a cookie between validations. OpenMRS's
 `/ws/rest/v1/session` reports the state of the *session*, not of the credentials on the request: a
@@ -197,7 +198,8 @@ component — that is the cheapest way to run `validate` against the real thing.
 ## How a password is checked
 
 OpenMRS checks it. This provider sends the name it resolved the user by and the password as it was
-typed to `GET /ws/rest/v1/session`, as Basic auth, and reads the answer.
+typed to `GET /ws/rest/v1/session`, as Basic auth, and reads the answer. A password containing `:` is
+not sent, because that endpoint cannot receive one intact — see *Deliberate differences* below.
 
 That means whatever the deployment has configured decides the login — the hash encoding, password
 expiry, lockout, and any `DelegatingAuthenticationScheme` in use — rather than a second
@@ -226,6 +228,15 @@ Two things about the answer are easy to get wrong, and both are load-bearing:
 - **A locked-out user is refused as an ordinary bad credential.** OpenMRS raises
   "Invalid number of connection attempts. Please try again later.", but a `CredentialInputValidator`
   can only answer yes or no, so the Keycloak form shows a bad-password message.
+- **A password containing `:` is refused here rather than sent.** OpenMRS's REST authorization
+  filter splits the decoded `Authorization: Basic` header on every `:` and authenticates with the
+  second field, so it reads a password only as far as its first colon: `admin:Admin123:anything`
+  signs `admin` in. Sending such a password would refuse the user anyway — the truncated prefix does
+  not match the stored hash — while spending an OpenMRS login attempt towards the account lockout,
+  and it would let `<the right password>:<anything>` through. `OpenmrsSessionClient` refuses it
+  before the request and says so in the log. The same user still signs in on OpenMRS's own login
+  form, which does not go through that filter; the repair is upstream, in the `decoded.split(":")`
+  that `AuthorizationFilter` in `webservices.rest`, and `AuthenticationFilter` in `fhir2`, both do.
 - **A digits-only login is not expanded to a check-digit system id.** OpenMRS matches a login of
   `1234` against the system id `123-4`; users who rely on that must type the system id as stored.
 - **Attribute search and group membership answer with empty streams.** OpenMRS users carry neither,

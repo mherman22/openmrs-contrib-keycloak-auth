@@ -95,6 +95,20 @@ public class OpenmrsSessionClient {
 			return Optional.empty();
 		}
 
+		/*
+		 * OpenMRS's REST authorization filter splits the decoded header on every ':' and reads the
+		 * password from the second field alone, so it would compare only the text before the first
+		 * colon: it refuses a password that contains one, and accepts the right password followed by
+		 * ':' and anything. Refusing here keeps that second case out and spends no OpenMRS login
+		 * attempt on the first, which would count towards the account lockout.
+		 */
+		if (password.indexOf(':') >= 0) {
+			log.warn("Refusing the credential of '{}' without asking OpenMRS: OpenMRS reads a password over REST only "
+			        + "as far as its first ':', so a password containing one cannot be checked this way",
+			    identifier);
+			return Optional.empty();
+		}
+
 		HttpResponse<String> response;
 		try {
 			String credentials = Base64.getEncoder()

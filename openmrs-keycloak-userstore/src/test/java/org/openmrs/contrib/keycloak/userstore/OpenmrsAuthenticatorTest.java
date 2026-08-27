@@ -13,15 +13,21 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertFalse;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.keycloak.component.ComponentModel;
+import org.keycloak.credential.CredentialInput;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.credential.PasswordCredentialModel;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.openmrs.contrib.keycloak.userstore.data.OpenmrsSessionClient;
@@ -97,5 +103,37 @@ public class OpenmrsAuthenticatorTest extends JPAHibernateTest {
 		openmrsAuthenticator.close();
 
 		org.mockito.Mockito.verify(userDao).close();
+	}
+
+	/**
+	 * The credential check re-reads the row rather than trusting the UserModel it was handed, so the
+	 * user can have been deleted since Keycloak resolved it.
+	 */
+	@Test
+	public void refusesAUserThatHasGoneFromTheOpenmrsUsersTable() {
+		when(userDao.getOpenmrsUserByUserId(152)).thenReturn(null);
+
+		assertFalse(openmrsAuthenticator.isValid(realmModel, keycloakUserFor(152), password("Admin123")));
+		verifyNoInteractions(sessionClient);
+	}
+
+	/** Without a uuid there is nothing to check OpenMRS's answer against. */
+	@Test
+	public void refusesAUserWhoseRowCarriesNoUuid() {
+		when(userDao.getOpenmrsUserByUserId(152)).thenReturn(openmrsUserModel);
+
+		assertFalse(openmrsAuthenticator.isValid(realmModel, keycloakUserFor(152), password("Admin123")));
+		verifyNoInteractions(sessionClient);
+	}
+
+	private UserModel keycloakUserFor(int userId) {
+		UserModel userModel = mock(UserModel.class);
+		when(userModel.getId()).thenReturn("f:00000000-0000-0000-0000-000000000000:" + userId);
+		when(userModel.isEnabled()).thenReturn(true);
+		return userModel;
+	}
+
+	private CredentialInput password(String typed) {
+		return new UserCredentialModel(null, PasswordCredentialModel.TYPE, typed);
 	}
 }

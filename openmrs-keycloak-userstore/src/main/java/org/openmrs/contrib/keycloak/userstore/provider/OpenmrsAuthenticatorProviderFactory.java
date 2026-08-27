@@ -108,7 +108,7 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 		        sessionClientFor(config));
 	}
 
-	private OpenmrsSessionClient sessionClientFor(ComponentModel config) {
+	OpenmrsSessionClient sessionClientFor(ComponentModel config) {
 		String baseUrl = config.get(OPENMRS_BASE_URL);
 		return sessionClients.computeIfAbsent(baseUrl == null ? "" : baseUrl, OpenmrsSessionClient::new);
 	}
@@ -133,16 +133,7 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 	@Override
 	public void validateConfiguration(KeycloakSession session, RealmModel realm, ComponentModel config)
 	        throws ComponentValidationException {
-		String baseUrl = config.get(OPENMRS_BASE_URL);
-		String problem = OpenmrsSessionClient.problemWith(baseUrl);
-		/*
-		 * Only a base URL that is present and wrong is rejected. Realm import calls this too, and a
-		 * realm written before this provider asked OpenMRS to check passwords carries no such key --
-		 * refusing it there stops Keycloak booting at all, admin console included.
-		 */
-		if (problem != null && baseUrl != null && !baseUrl.trim().isEmpty()) {
-			throw new ComponentValidationException(problem);
-		}
+		validateBaseUrl(config.get(OPENMRS_BASE_URL));
 
 		try {
 			ensureEntityManagerFactory(config);
@@ -153,6 +144,17 @@ public class OpenmrsAuthenticatorProviderFactory implements UserStorageProviderF
 			        "An error occurred while trying to validated the supplied connection information the error was: "
 			                + e.getLocalizedMessage(),
 			        e);
+		}
+	}
+
+	/**
+	 * Rejects a base URL that is present and wrong, and accepts one that is absent: realm import calls
+	 * this too, and refusing a realm that carries no such key stops Keycloak booting at all.
+	 */
+	static void validateBaseUrl(String baseUrl) {
+		String problem = OpenmrsSessionClient.problemWith(baseUrl);
+		if (problem != null && baseUrl != null && !baseUrl.trim().isEmpty()) {
+			throw new ComponentValidationException(problem);
 		}
 	}
 

@@ -153,6 +153,17 @@ public class CredentialDelegationTest extends JPAHibernateTest {
 	}
 
 	@Test
+	public void refusesAPasswordCarryingAColonWithoutAskingOpenmrs() {
+		openmrs.authenticates("uuid-user-200");
+
+		for (String typed : new String[] { "Sid123:anything-at-all", ":Sid123" }) {
+			assertFalse("OpenMRS reads a password only as far as its first colon, so it would take any suffix",
+			    authenticates("SidVaish", typed));
+		}
+		assertThat(openmrs.calls(), equalTo(0));
+	}
+
+	@Test
 	public void readsTheUsersOwnUuidRatherThanTheNestedPersons() {
 		openmrs.authenticatesSomebodyElseButNestsThePerson("uuid-user-401", "uuid-user-200");
 
